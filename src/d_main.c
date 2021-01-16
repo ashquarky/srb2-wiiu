@@ -1503,11 +1503,15 @@ void D_SRB2Main(void)
 		autostart = true;
 	}
 
+//using a file that doesn't exist causes issues on wiiu, because, um, hm,
+//TODO actually fix this
+#ifndef __WIIU__
 	// user settings come before "+" parameters.
 	if (dedicated)
 		COM_ImmedExecute(va("exec \"%s"PATHSEP"adedserv.cfg\"\n", srb2home));
 	else
 		COM_ImmedExecute(va("exec \"%s"PATHSEP"autoexec.cfg\" -noerror\n", srb2home));
+#endif
 
 	if (!autostart)
 		M_PushSpecialParameters(); // push all "+" parameters at the command buffer
