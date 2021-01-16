@@ -469,24 +469,49 @@ static lumpinfo_t* ResGetLumpsWad (FILE* handle, UINT16* nlmp, const char* filen
  */
 static boolean ResFindSignature (FILE* handle, char endPat[], UINT32 startpos)
 {
+	//the Wii U has rather slow filesystem access, and fgetc is *unbearable*
+	//so I reimplemented this function to buffer 128k chunks
 	char *s;
 	int c;
 
+	fseek(handle, 0, SEEK_END);
+	size_t len = ftell(handle);
+
 	fseek(handle, startpos, SEEK_SET);
+	size_t remaining = len - startpos;
+	size_t chunkpos = startpos;
+
 	s = endPat;
-	while((c = fgetc(handle)) != EOF)
-	{
-		if (*s != c && s > endPat) // No match?
-			s = endPat; // We "reset" the counter by sending the s pointer back to the start of the array.
-		if (*s == c)
-		{
-			s++;
-			if (*s == 0x00) // The array pointer has reached the key char which marks the end. It means we have matched the signature.
+
+	//128k buffers
+	size_t buffer_size = min(256 * 1024 * sizeof(char), remaining);
+	char* buffer = memalign(0x40, buffer_size);
+
+	size_t bytes_read = 0;
+	while ((bytes_read = fread(buffer, 1, buffer_size, handle)) > 0) {
+		for (size_t i = 0; i < bytes_read; i++) {
+			c = (int)buffer[i];
+
+			if (*s != c && s > endPat) // No match?
+				s = endPat; // We "reset" the counter by sending the s pointer back to the start of the array.
+			if (*s == c)
 			{
-				return true;
+				s++;
+				if (*s == 0x00) // The array pointer has reached the key char which marks the end. It means we have matched the signature.
+				{
+					//the original function would leave the FILE* seeked to the end of the match
+					size_t foundpos = chunkpos + i + 1;
+					fseek(handle, foundpos, SEEK_SET);
+
+					free(buffer);
+					return true;
+				}
 			}
 		}
+		chunkpos += bytes_read;
 	}
+
+	free(buffer);
 	return false;
 }
 
@@ -607,13 +632,14 @@ static lumpinfo_t* ResGetLumpsZip (FILE* handle, UINT16* nlmp)
 		fullnamelen = SHORT(zentry.namelen);
 
 		fullname = memalign(0x40, fullnamelen + 1);
-		if (fgets(fullname, fullnamelen + 1, handle) != fullname)
+		if (fread(fullname, 1, fullnamelen, handle) <= 0)
 		{
 			CONS_Alert(CONS_ERROR, "Unable to read lumpname (%s)\n", M_FileError(handle));
 			Z_Free(lumpinfo);
 			free(fullname);
 			return NULL;
 		}
+		fullname[fullnamelen] = '\0';
 
 		// Strip away file address and extension for the 8char name.
 		if ((trimname = strrchr(fullname, '/')) != 0)
@@ -1987,8 +2013,9 @@ W_VerifyPK3 (FILE *fp, lumpchecklist_t *checklist, boolean status)
 		fullnamelen = SHORT(zentry.namelen);
 
 		fullname = memalign(0x40, fullnamelen + 1);
-		if (fgets(fullname, fullnamelen + 1, fp) != fullname)
+		if (fread(fullname, 1, fullnamelen, fp) <= 0)
 			return true;
+		fullname[fullnamelen] = '\0';
 
 		// Strip away file address and extension for the 8char name.
 		if ((trimname = strrchr(fullname, '/')) != 0)
