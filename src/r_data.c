@@ -1190,7 +1190,7 @@ static void R_Init8to16(void)
 	}
 
 	// test a big colormap
-	hicolormaps = Z_Malloc(16384*sizeof(*hicolormaps), PU_STATIC, NULL);
+	hicolormaps = Z_MallocAlign(16384*sizeof(*hicolormaps), PU_STATIC, NULL, 7);
 	for (i = 0; i < 16384; i++)
 		hicolormaps[i] = (INT16)(i<<1);
 }

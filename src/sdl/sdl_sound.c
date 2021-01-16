@@ -54,6 +54,7 @@
 #include <direct.h>
 #elif defined (__GNUC__)
 #include <unistd.h>
+#include <malloc.h>
 #endif
 #include "../z_zone.h"
 
@@ -265,7 +266,7 @@ static void *getsfx(lumpnum_t sfxlump, size_t *len)
 	size_t size = *len;
 	SDL_AudioCVT sfxcvt;
 
-	sfx = (dssfx_t *)malloc(size);
+	sfx = (dssfx_t *)memalign(0x40, size);
 	if (sfx) W_ReadLump(sfxlump, (void *)sfx);
 	else return NULL;
 	sr = SHORT(sfx->samplerate);

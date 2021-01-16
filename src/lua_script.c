@@ -505,7 +505,7 @@ void LUA_LoadLump(UINT16 wad, UINT16 lump, boolean noresults)
 	size_t len;
 	f.wad = wad;
 	f.size = W_LumpLengthPwad(wad, lump);
-	f.data = Z_Malloc(f.size, PU_LUA, NULL);
+	f.data = Z_MallocAlign(f.size, PU_LUA, NULL, 7);
 	W_ReadLumpPwad(wad, lump, f.data);
 	f.curpos = f.data;
 

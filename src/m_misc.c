@@ -280,7 +280,7 @@ size_t FIL_ReadFileTag(char const *name, UINT8 **buffer, INT32 tag)
 	length = ftell(handle);
 	fseek(handle,0,SEEK_SET);
 
-	buf = Z_Malloc(length + 1, tag, NULL);
+	buf = Z_MallocAlign(length + 1, tag, NULL, 7);
 	count = fread(buf, 1, length, handle);
 	fclose(handle);
 
@@ -306,7 +306,7 @@ boolean FIL_ConvertTextFileToBinary(const char *textfilename, const char *binfil
 {
 	FILE *textfile;
 	FILE *binfile;
-	UINT8 buffer[1024];
+	UINT8 buffer[1024] __attribute__ ((aligned (64)));
 	size_t count;
 	boolean success;
 

@@ -543,7 +543,7 @@ static INT32
 Ploadflat (levelflat_t *levelflat, const char *flatname, boolean resize)
 {
 #ifndef NO_PNG_LUMPS
-	UINT8         buffer[8];
+	UINT8         buffer[8] __attribute__((aligned(64)));
 #endif
 
 	lumpnum_t    flatnum;

@@ -339,7 +339,7 @@ int md5_stream (FILE *stream, void *resblock)
   /* Important: BLOCKSIZE must be a multiple of 64.  */
 #define BLOCKSIZE 4096
   struct md5_ctx ctx;
-  char buffer[BLOCKSIZE + 72];
+  char buffer[BLOCKSIZE + 72] __attribute__ ((aligned (64)));
   size_t sum = 0;
 
   /* Initialize the computation context.  */

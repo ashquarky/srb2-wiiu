@@ -31,6 +31,7 @@
 
 #ifdef __GNUC__
 #include <unistd.h>
+#include <malloc.h>
 #endif
 
 #define ZWAD
@@ -375,7 +376,7 @@ static lumpinfo_t* ResGetLumpsWad (FILE* handle, UINT16* nlmp, const char* filen
 	size_t i;
 	INT32 compressed = 0;
 
-	wadinfo_t header;
+	wadinfo_t header __attribute__ ((aligned (64)));
 	lumpinfo_t *lump_p;
 	filelump_t *fileinfo;
 	void *fileinfov;
@@ -402,7 +403,7 @@ static lumpinfo_t* ResGetLumpsWad (FILE* handle, UINT16* nlmp, const char* filen
 
 	// read wad file directory
 	i = header.numlumps * sizeof (*fileinfo);
-	fileinfov = fileinfo = malloc(i);
+	fileinfov = fileinfo = memalign(0x40, i);
 	if (fseek(handle, header.infotableofs, SEEK_SET) == -1
 		|| fread(fileinfo, 1, i, handle) < i)
 	{
@@ -547,9 +548,9 @@ typedef struct zlentry_s
  */
 static lumpinfo_t* ResGetLumpsZip (FILE* handle, UINT16* nlmp)
 {
-    zend_t zend;
-    zentry_t zentry;
-    zlentry_t zlentry;
+    zend_t zend __attribute__ ((aligned (64)));
+    zentry_t zentry __attribute__ ((aligned (64)));
+    zlentry_t zlentry __attribute__ ((aligned (64)));
 
 	UINT16 numlumps = *nlmp;
 	lumpinfo_t* lumpinfo;
@@ -605,7 +606,7 @@ static lumpinfo_t* ResGetLumpsZip (FILE* handle, UINT16* nlmp)
 
 		fullnamelen = SHORT(zentry.namelen);
 
-		fullname = malloc(fullnamelen + 1);
+		fullname = memalign(0x40, fullnamelen + 1);
 		if (fgets(fullname, fullnamelen + 1, handle) != fullname)
 		{
 			CONS_Alert(CONS_ERROR, "Unable to read lumpname (%s)\n", M_FileError(handle));
@@ -1400,7 +1401,7 @@ size_t W_ReadLumpHeaderPwad(UINT16 wad, UINT16 lump, void *dest, size_t size, si
 			char *decData; // Lump's decompressed real data.
 			size_t retval; // Helper var, lzf_decompress returns 0 when an error occurs.
 
-			rawData = Z_Malloc(l->disksize, PU_STATIC, NULL);
+			rawData = Z_MallocAlign(l->disksize, PU_STATIC, NULL, 7);
 			decData = Z_Malloc(l->size, PU_STATIC, NULL);
 
 			if (fread(rawData, 1, l->disksize, handle) < l->disksize)
@@ -1449,7 +1450,7 @@ size_t W_ReadLumpHeaderPwad(UINT16 wad, UINT16 lump, void *dest, size_t size, si
 			unsigned long rawSize = l->disksize;
 			unsigned long decSize = l->size;
 
-			rawData = Z_Malloc(rawSize, PU_STATIC, NULL);
+			rawData = Z_MallocAlign(rawSize, PU_STATIC, NULL, 7);
 			decData = Z_Malloc(decSize, PU_STATIC, NULL);
 
 			if (fread(rawData, 1, rawSize, handle) < rawSize)
@@ -1538,7 +1539,7 @@ void *W_CacheLumpNumPwad(UINT16 wad, UINT16 lump, INT32 tag)
 	lumpcache = wadfiles[wad]->lumpcache;
 	if (!lumpcache[lump])
 	{
-		void *ptr = Z_Malloc(W_LumpLengthPwad(wad, lump), tag, &lumpcache[lump]);
+		void *ptr = Z_MallocAlign(W_LumpLengthPwad(wad, lump), tag, &lumpcache[lump], 7);
 		W_ReadLumpHeaderPwad(wad, lump, ptr, 0, 0);  // read the lump in full
 	}
 	else
@@ -1568,7 +1569,7 @@ void *W_CacheLumpNumForce(lumpnum_t lumpnum, INT32 tag)
 	if (!TestValidLump(wad,lump))
 		return NULL;
 
-	ptr = Z_Malloc(W_LumpLengthPwad(wad, lump), tag, NULL);
+	ptr = Z_MallocAlign(W_LumpLengthPwad(wad, lump), tag, NULL, 7);
 	W_ReadLumpHeaderPwad(wad, lump, ptr, 0, 0);  // read the lump in full
 
 	return ptr;
@@ -1679,7 +1680,7 @@ void *W_CacheSoftwarePatchNumPwad(UINT16 wad, UINT16 lump, INT32 tag)
 #endif
 
 		ptr = Z_Malloc(len, tag, &lumpcache[lump]);
-		lumpdata = Z_Malloc(len, tag, NULL);
+		lumpdata = Z_MallocAlign(len, tag, NULL, 7);
 
 		// read the lump in full
 		W_ReadLumpHeaderPwad(wad, lump, lumpdata, 0, 0);
@@ -1888,8 +1889,8 @@ W_VerifyWAD (FILE *fp, lumpchecklist_t *checklist, boolean status)
 	size_t i;
 
 	// assume wad file
-	wadinfo_t header;
-	filelump_t lumpinfo;
+	wadinfo_t header __attribute__ ((aligned (64)));
+	filelump_t lumpinfo __attribute__ ((aligned (64)));
 
 	// read the header
 	if (fread(&header, 1, sizeof header, fp) == sizeof header
@@ -1944,8 +1945,8 @@ static lumpchecklist_t folderblacklist[] =
 static int
 W_VerifyPK3 (FILE *fp, lumpchecklist_t *checklist, boolean status)
 {
-    zend_t zend;
-    zentry_t zentry;
+    zend_t zend __attribute__ ((aligned (64)));
+    zentry_t zentry __attribute__ ((aligned (64)));
 
 	UINT16 numlumps;
 	size_t i;
@@ -1985,7 +1986,7 @@ W_VerifyPK3 (FILE *fp, lumpchecklist_t *checklist, boolean status)
 
 		fullnamelen = SHORT(zentry.namelen);
 
-		fullname = malloc(fullnamelen + 1);
+		fullname = memalign(0x40, fullnamelen + 1);
 		if (fgets(fullname, fullnamelen + 1, fp) != fullname)
 			return true;
 
