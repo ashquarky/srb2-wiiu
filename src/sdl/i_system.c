@@ -2969,6 +2969,11 @@ static long get_entry(const char* name, const char* buf)
 }
 #endif
 
+#ifdef __WIIU__
+#include <coreinit/memexpheap.h>
+#include <coreinit/memheap.h>
+#endif
+
 // quick fix for compil
 UINT32 I_GetFreeMem(UINT32 *total)
 {
@@ -3084,6 +3089,11 @@ UINT32 I_GetFreeMem(UINT32 *total)
 	if (total)
 		*total = totalKBytes << 10;
 	return freeKBytes << 10;
+#elif defined(__WIIU__)
+	uint32_t mem = MEMGetTotalFreeSizeForExpHeap(MEMGetBaseHeapHandle(MEM_BASE_HEAP_MEM2));
+	if (total)
+		*total = mem;
+	return mem;
 #else
 	// Guess 48 MB.
 	if (total)

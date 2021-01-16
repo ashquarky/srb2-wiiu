@@ -9,6 +9,13 @@ include(LibFindMacros)
 
 libfind_pkg_check_modules(SDL2_MIXER_PKGCONF SDL2_mixer)
 
+if(WIIU)
+	#pkgconfig is trustworthy on wiiu
+	set(SDL2_MIXER_FOUND ${SDL2_MIXER_PKGCONF_FOUND})
+	set(SDL2_MIXER_INCLUDE_DIRS ${SDL2_MIXER_PKGCONF_INCLUDE_DIRS})
+	set(SDL2_MIXER_LIBRARIES ${SDL2_MIXER_PKGCONF_LINK_LIBRARIES})
+else()
+
 # includes
 find_path(SDL2_MIXER_INCLUDE_DIR
 	NAMES SDL_mixer.h
@@ -32,3 +39,5 @@ find_library(SDL2_MIXER_LIBRARY
 set(SDL2_MIXER_PROCESS_INCLUDES SDL2_MIXER_INCLUDE_DIR)
 set(SDL2_MIXER_PROCESS_LIBS SDL2_MIXER_LIBRARY)
 libfind_process(SDL2_MIXER)
+
+endif(WIIU)

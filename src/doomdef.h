@@ -112,7 +112,7 @@
 //#define PARANOIA // do some tests that never fail but maybe
 // turn this on by make etc.. DEBUGMODE = 1 or use the Debug profile in the VC++ projects
 //#endif
-#if defined (_WIN32) || (defined (__unix__) && !defined (MSDOS)) || defined(__APPLE__) || defined (UNIXCOMMON) || defined (macintosh)
+#if defined (_WIN32) || (defined (__unix__) && !defined (MSDOS)) || defined(__APPLE__) || defined (UNIXCOMMON) || defined (macintosh) || defined(__WIIU__)
 #define LOGMESSAGES // write message in log.txt
 #endif
 
@@ -602,7 +602,10 @@ extern const char *compdate, *comptime, *comprevision, *compbranch;
 ///	    	This stops the game from storing backups of the states, sprites, and mobjinfo tables.
 ///	    	Though this info is compressed under normal circumstances, it's still a lot of extra
 ///	    	memory that never gets touched.
+//wiiu: this overflows a buffer *somewhere*, so until ASAN is a thing it's off
+#ifndef __WIIU__
 #define ALLOW_RESETDATA
+#endif
 
 /// Experimental tweaks to analog mode. (Needs a lot of work before it's ready for primetime.)
 //#define REDSANALOG

@@ -152,6 +152,10 @@ if(${SDL2_FOUND})
 	else()
 		set_target_properties(SRB2SDL2 PROPERTIES OUTPUT_NAME srb2)
 	endif()
+	if (WIIU)
+		include("${WUT_ROOT}/share/wut.cmake" REQUIRED)
+		wut_create_rpx(SRB2SDL2)
+	endif()
 
 	if(${CMAKE_SYSTEM} MATCHES Darwin)
 		find_library(CORE_LIB CoreFoundation)
@@ -180,6 +184,12 @@ if(${SDL2_FOUND})
 			${OPENGL_LIBRARIES}
 			${CURL_LIBRARIES}
 		)
+
+		if(WIIU)
+			target_link_libraries(SRB2SDL2 PRIVATE
+				m
+			)
+		endif()
 
 		if(${CMAKE_SYSTEM} MATCHES Linux)
 			target_link_libraries(SRB2SDL2 PRIVATE
@@ -270,6 +280,10 @@ if(${SDL2_FOUND})
 	target_compile_definitions(SRB2SDL2 PRIVATE
 		-DDDIRECTFULLSCREEN -DHAVE_SDL
 	)
+
+	if(WIIU)
+		target_compile_definitions(SRB2SDL2 PRIVATE -DPARANOIA -DNOMD5 -DNONET)
+	endif(WIIU)
 
 	## strip debug symbols into separate file when using gcc.
 	## to be consistent with Makefile, don't generate for OS X.
