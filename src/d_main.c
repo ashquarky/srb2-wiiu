@@ -934,7 +934,7 @@ void D_StartTitle(void)
 	SplitScreen_OnChange();
 	botingame = false;
 	botskin = 0;
-	cv_debug = 0xFFFFFFFF;
+	cv_debug = 0;
 	emeralds = 0;
 	memset(&luabanks, 0, sizeof(luabanks));
 	lastmaploaded = 0;

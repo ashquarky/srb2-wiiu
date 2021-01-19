@@ -11345,7 +11345,7 @@ static void M_StartServer(INT32 choice)
 	multiplayer = true;
 
 	// Still need to reset devmode
-	cv_debug = 0xFFFFFFFF;
+	cv_debug = 0;
 
 	if (demoplayback)
 		G_StopDemo();
