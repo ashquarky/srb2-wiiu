@@ -282,7 +282,8 @@ if(${SDL2_FOUND})
 	)
 
 	if(WIIU)
-		target_compile_definitions(SRB2SDL2 PRIVATE -DPARANOIA -DNOMD5 -DNONET)
+		target_compile_definitions(SRB2SDL2 PRIVATE -DNOMD5 -DNONET)
+		set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O3")
 	endif(WIIU)
 
 	## strip debug symbols into separate file when using gcc.
