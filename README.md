@@ -1,7 +1,7 @@
 # Sonic Robo Blast 2
 
 ## WiiU info
-I was doing some light experimentation with a Wii U port of SRB2, since it's kinda a great lil' game. At the time of writing it crashes when entering a level due to a buffer overflow Somewhere in the code. reset data is disabled for a similar reason. Works about the same in Decaf and on console via classic HBL (no ProcUI).
+I was doing some light experimentation with a Wii U port of SRB2, since it's kinda a great lil' game. ~~At the time of writing it crashes when entering a level due to a buffer overflow Somewhere in the code.~~ (Update: it was a stack overflow! Fixed via a slight P_SetMobjState refactor) reset data is disabled for a similar reason. Works about the same in Decaf and on console via classic HBL (no ProcUI).
 
 ### Compiling
 With the usual wut/devkitPPC setup (last tested on r38):
