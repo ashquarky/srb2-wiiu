@@ -175,11 +175,11 @@ if(${SDL2_FOUND})
 				set(OBJCOPY_ONLY_KEEP_DEBUG "--only-keep-debug")
 			endif()
 			message(STATUS "Will make separate debug symbols in *.debug")
-			add_custom_command(TARGET SRB2SDL2 POST_BUILD
-				COMMAND ${OBJCOPY} ${OBJCOPY_ONLY_KEEP_DEBUG} $<TARGET_FILE:SRB2SDL2> $<TARGET_FILE:SRB2SDL2>.debug
-				COMMAND ${OBJCOPY} --strip-debug $<TARGET_FILE:SRB2SDL2>
-				COMMAND ${OBJCOPY} --add-gnu-debuglink=$<TARGET_FILE:SRB2SDL2>.debug $<TARGET_FILE:SRB2SDL2>
-			)
+			#add_custom_command(TARGET SRB2SDL2 POST_BUILD
+			#	COMMAND ${OBJCOPY} ${OBJCOPY_ONLY_KEEP_DEBUG} $<TARGET_FILE:SRB2SDL2> $<TARGET_FILE:SRB2SDL2>.debug
+			#	COMMAND ${OBJCOPY} --strip-debug $<TARGET_FILE:SRB2SDL2>
+			#	COMMAND ${OBJCOPY} --add-gnu-debuglink=$<TARGET_FILE:SRB2SDL2>.debug $<TARGET_FILE:SRB2SDL2>
+			#)
 		endif()
 	endif()
 
