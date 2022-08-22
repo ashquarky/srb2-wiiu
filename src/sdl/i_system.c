@@ -54,6 +54,12 @@ typedef LPVOID (WINAPI *p_MapViewOfFile) (HANDLE, DWORD, DWORD, DWORD, SIZE_T);
 #include <fcntl.h>
 #endif
 
+#ifdef __WUT__
+#include <coreinit/debug.h>
+#include <coreinit/memheap.h>
+#include <coreinit/memexpheap.h>
+#endif
+
 #include <stdio.h>
 #ifdef _WIN32
 #include <conio.h>
@@ -894,6 +900,10 @@ void I_OutputMsg(const char *fmt, ...)
 	{
 		tty_Show();
 	}
+#endif
+
+#if defined(__WIIU__)
+    OSReport("%s", txt);
 #endif
 
 	// 2004-03-03 AJR Since not all messages end in newline, some were getting displayed late.
@@ -3094,6 +3104,13 @@ UINT32 I_GetFreeMem(UINT32 *total)
 	if (total)
 		*total = totalKBytes << 10;
 	return freeKBytes << 10;
+#elif defined(__WIIU__)
+    uint32_t mem = MEMGetTotalFreeSizeForExpHeap(MEMGetBaseHeapHandle(MEM_BASE_HEAP_MEM2));
+    if (total) {
+        // Not strictly true, but, y'know
+        *total = mem;
+    }
+    return mem;
 #else
 	// Guess 48 MB.
 	if (total)

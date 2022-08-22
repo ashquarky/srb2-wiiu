@@ -243,6 +243,12 @@ if (${CMAKE_SYSTEM} MATCHES "Darwin")
 	endif()
 endif()
 
+# Wii U stuff
+if (WUT)
+	target_compile_definitions(SRB2SDL2 PRIVATE -DNONET)
+	wut_create_rpx(SRB2SDL2)
+endif()
+
 # Compatibility flag with later versions of GCC
 # We should really fix our code to not need this
 if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
