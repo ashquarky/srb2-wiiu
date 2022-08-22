@@ -903,7 +903,7 @@ void I_OutputMsg(const char *fmt, ...)
 #endif
 
 #if defined(__WIIU__)
-    OSReport("%s", txt);
+    OSConsoleWrite(txt, len);
 #endif
 
 	// 2004-03-03 AJR Since not all messages end in newline, some were getting displayed late.
