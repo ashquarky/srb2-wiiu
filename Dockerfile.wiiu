@@ -1,0 +1,18 @@
+FROM devkitpro/devkitppc:20220821 AS sdl-build
+
+RUN wget https://github.com/GaryOderNichts/SDL/archive/522d9b79cf5fa06512cb8af1ab6174459f3dcc90.zip -O sdl.zip && unzip sdl.zip && rm sdl.zip
+RUN cd SDL-* && \
+  /opt/devkitpro/portlibs/wiiu/bin/powerpc-eabi-cmake -S. -Bbuild -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$DEVKITPRO/portlibs/wiiu && \
+  cmake --build build -j $(nproc) && \
+  cmake --install build --prefix /sdl-out
+
+FROM devkitpro/devkitppc:20220821
+
+COPY --from=sdl-build /sdl-out/ /opt/devkitpro/portlibs/wiiu/
+
+WORKDIR /app
+CMD /opt/devkitpro/portlibs/wiiu/bin/powerpc-eabi-cmake -S. -Bdebian \
+  -DSRB2_CONFIG_HAVE_CURL=OFF \
+  -DSRB2_CONFIG_HAVE_OPENMPT=OFF \
+  -DSRB2_CONFIG_HAVE_GME=OFF && \
+  cmake --build debian -j $(nproc)
