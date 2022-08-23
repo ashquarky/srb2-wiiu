@@ -33,6 +33,10 @@
 #include <unistd.h>
 #endif
 
+#ifdef __WIIU__
+#include <malloc.h>
+#endif
+
 #define ZWAD
 
 #ifdef ZWAD
@@ -314,16 +318,27 @@ static inline INT32 W_MakeFileMD5(const char *filename, void *resblock)
 
 	if ((fhandle = fopen(filename, "rb")) != NULL)
 	{
+#ifdef __WIIU__
+        // Set a large 256KiB buffer on wiiu - the OS wont' do this
+        void* buf = memalign(0x40, 256 * 1024);
+        setvbuf(fhandle, buf, _IOFBF, 256 * 1024);
+#endif
 		tic_t t = I_GetTime();
 		CONS_Debug(DBG_SETUP, "Making MD5 for %s\n",filename);
 		if (md5_stream(fhandle, resblock) == 1)
 		{
 			fclose(fhandle);
+#ifdef __WIIU__
+            free(buf);
+#endif
 			return 1;
 		}
 		CONS_Debug(DBG_SETUP, "MD5 calc for %s took %f seconds\n",
 			filename, (float)(I_GetTime() - t)/NEWTICRATE);
 		fclose(fhandle);
+#ifdef __WIIU__
+        free(buf);
+#endif
 		return 0;
 	}
 #endif
@@ -927,6 +942,12 @@ UINT16 W_InitFile(const char *filename, boolean mainfile, boolean startup)
 			return W_InitFileError(filename, false);
 		}
 	}
+#endif
+
+#ifdef __WIIU__
+    // Set up a vbuf - this helps a lot with resource loading, esp. zip
+    void *buf = memalign(0x40, 32 * 1024); // TODO don't leak this
+    setvbuf(handle, buf, _IOFBF, 32 * 1024);
 #endif
 
 	switch(type = ResourceFileDetect(filename))
@@ -2435,6 +2456,12 @@ static int W_VerifyFile(const char *filename, lumpchecklist_t *checklist,
 	if ((handle = W_OpenWadFile(&filename, false)) == NULL)
 		return -1;
 
+#ifdef __WIIU__
+    // Set a smaller buffer for better seeking around
+    void* buf = memalign(0x40, 16 * 1024);
+    setvbuf(handle, buf, _IOFBF, 16 * 1024);
+#endif
+
 	if (stricmp(&filename[strlen(filename) - 4], ".pk3") == 0)
 		goodfile = W_VerifyPK3(handle, checklist, status);
 	else
@@ -2447,6 +2474,9 @@ static int W_VerifyFile(const char *filename, lumpchecklist_t *checklist,
 		}
 	}
 	fclose(handle);
+#ifdef __WIIU__
+    free(buf);
+#endif
 	return goodfile;
 }
 

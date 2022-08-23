@@ -627,6 +627,11 @@ void M_SaveConfig(const char *filename)
 		}
 	}
 
+#ifdef __WIIU__
+    // Set a small buffer on wiiu just because writes are slow
+    setvbuf(f, NULL, _IOFBF, 4 * 1024);
+#endif
+
 	// header message
 	fprintf(f, "// SRB2 configuration file.\n");
 
