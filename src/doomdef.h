@@ -603,7 +603,9 @@ extern const char *compdate, *comptime, *comprevision, *compbranch;
 ///	    	This stops the game from storing backups of the states, sprites, and mobjinfo tables.
 ///	    	Though this info is compressed under normal circumstances, it's still a lot of extra
 ///	    	memory that never gets touched.
+#ifndef __WIIU__ //TODO: find the actual error
 #define ALLOW_RESETDATA
+#endif
 
 /// Experimental tweaks to analog mode. (Needs a lot of work before it's ready for primetime.)
 //#define REDSANALOG
