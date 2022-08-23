@@ -2326,12 +2326,16 @@ static boolean CL_ServerConnectionTicker(const char *tmpsave, tic_t *oldtic, tic
 			// WARNING: this can be useless in case of server not in GS_LEVEL
 			// but since the network layer doesn't provide ordered packets...
 			CL_PrepareDownloadSaveGame(tmpsave);
-#endif
-			if (I_GetTime() >= *asksent && CL_SendJoin())
+            if (I_GetTime() >= *asksent && CL_SendJoin())
 			{
 				*asksent = I_GetTime() + NEWTICRATE*3;
 				cl_mode = CL_WAITJOINRESPONSE;
 			}
+#else
+            if (CL_SendJoin())
+                cl_mode = CL_WAITJOINRESPONSE;
+#endif
+
 			break;
 		case CL_WAITJOINRESPONSE:
 			if (I_GetTime() >= *asksent)
