@@ -33,9 +33,7 @@
 #include <unistd.h>
 #endif
 
-#ifdef __WIIU__
 #include <malloc.h>
-#endif
 
 #define ZWAD
 
@@ -629,11 +627,10 @@ static lumpinfo_t* ResGetLumpsZip (FILE* handle, UINT16* nlmp)
 	lump_p = lumpinfo = Z_Malloc(numlumps * sizeof (*lumpinfo), PU_STATIC, NULL);
 
 	fseek(handle, LONG(zend.cdiroffset), SEEK_SET);
-    void *cdir;
-    cdir = Z_MallocAlign(LONG(zend.cdirsize), PU_STATIC, &cdir, 7);
+    void *cdir = memalign(0x40, LONG(zend.cdirsize));
     if (fread(cdir, 1, LONG(zend.cdirsize), handle) < LONG(zend.cdirsize)) {
         CONS_Alert(CONS_ERROR, "Failed to read central directory (%s)\n", M_FileError(handle));
-        Z_Free(cdir);
+        free(cdir);
         Z_Free(lumpinfo);
         return NULL;
     }
@@ -650,7 +647,7 @@ static lumpinfo_t* ResGetLumpsZip (FILE* handle, UINT16* nlmp)
 		if (memcmp(zentry->signature, pat_central, 4))
 		{
 			CONS_Alert(CONS_ERROR, "Central directory is corrupt\n");
-            Z_Free(cdir);
+            free(cdir);
 			Z_Free(lumpinfo);
 			return NULL;
 		}
@@ -661,7 +658,8 @@ static lumpinfo_t* ResGetLumpsZip (FILE* handle, UINT16* nlmp)
 		lump_p->size = LONG(zentry->size);
 
 		fullname = malloc(SHORT(zentry->namelen) + 1);
-		strlcpy(fullname, (char*)(zentry + 1), SHORT(zentry->namelen) + 1);
+        memcpy(fullname, (char*)(&zentry[1]), SHORT(zentry->namelen));
+        fullname[SHORT(zentry->namelen)] = '\0';
 
 		// Strip away file address and extension for the 8char name.
 		if ((trimname = strrchr(fullname, '/')) != 0)
@@ -705,6 +703,9 @@ static lumpinfo_t* ResGetLumpsZip (FILE* handle, UINT16* nlmp)
 		// skip and ignore comments/extra fields
         offset += sizeof *zentry + SHORT(zentry->namelen) + SHORT(zentry->xtralen) + SHORT(zentry->commlen);
 	}
+
+    free(cdir);
+    cdir = NULL;
 
 	// Adjust lump position values properly
 	for (i = 0, lump_p = lumpinfo; i < numlumps; i++, lump_p++)
@@ -2357,8 +2358,7 @@ W_VerifyPK3 (FILE *fp, lumpchecklist_t *checklist, boolean status)
 	numlumps = SHORT(zend.entries);
 
 	fseek(fp, LONG(zend.cdiroffset), SEEK_SET);
-    void *cdir;
-    cdir = Z_MallocAlign(LONG(zend.cdirsize), PU_STATIC, &cdir, 7);
+    void *cdir = memalign(0x40, LONG(zend.cdirsize));
     if (fread(cdir, 1, LONG(zend.cdirsize), fp) < LONG(zend.cdirsize))
         goto error;
 
@@ -2377,7 +2377,8 @@ W_VerifyPK3 (FILE *fp, lumpchecklist_t *checklist, boolean status)
 		if (verified == true)
 		{
 			fullname = malloc(SHORT(zentry->namelen) + 1);
-            strlcpy(fullname, (char*)(zentry + 1), SHORT(zentry->namelen) + 1);
+            memcpy(fullname, (char*)(&zentry[1]), SHORT(zentry->namelen));
+            fullname[SHORT(zentry->namelen)] = '\0';
 
 			// Strip away file address and extension for the 8char name.
 			if ((trimname = strrchr(fullname, '/')) != 0)
@@ -2419,7 +2420,7 @@ W_VerifyPK3 (FILE *fp, lumpchecklist_t *checklist, boolean status)
 			sizeof zlentry + SHORT(zlentry.namelen) + SHORT(zlentry.xtralen) + LONG(zlentry.compsize);
 	}
 
-    Z_Free(cdir);
+    free(cdir);
 
 	if (data_size < file_size)
 	{
@@ -2438,7 +2439,7 @@ W_VerifyPK3 (FILE *fp, lumpchecklist_t *checklist, boolean status)
 		return verified;
 	}
 error:
-    Z_Free(cdir);
+    free(cdir);
     return true;
 }
 
