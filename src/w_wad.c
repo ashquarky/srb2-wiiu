@@ -661,7 +661,7 @@ static lumpinfo_t* ResGetLumpsZip (FILE* handle, UINT16* nlmp)
 		lump_p->size = LONG(zentry->size);
 
 		fullname = malloc(SHORT(zentry->namelen) + 1);
-		strncpy(fullname, (char*)(zentry + 1), SHORT(zentry->namelen));
+		strlcpy(fullname, (char*)(zentry + 1), SHORT(zentry->namelen) + 1);
 
 		// Strip away file address and extension for the 8char name.
 		if ((trimname = strrchr(fullname, '/')) != 0)
@@ -2377,7 +2377,7 @@ W_VerifyPK3 (FILE *fp, lumpchecklist_t *checklist, boolean status)
 		if (verified == true)
 		{
 			fullname = malloc(SHORT(zentry->namelen) + 1);
-            strncpy(fullname, (char*)(zentry + 1), SHORT(zentry->namelen));
+            strlcpy(fullname, (char*)(zentry + 1), SHORT(zentry->namelen) + 1);
 
 			// Strip away file address and extension for the 8char name.
 			if ((trimname = strrchr(fullname, '/')) != 0)
