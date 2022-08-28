@@ -1,6 +1,6 @@
 FROM devkitpro/devkitppc:20220821 AS sdl-build
 
-RUN wget https://github.com/GaryOderNichts/SDL/archive/522d9b79cf5fa06512cb8af1ab6174459f3dcc90.zip -O sdl.zip && unzip sdl.zip && rm sdl.zip
+RUN wget https://github.com/GaryOderNichts/SDL/archive/da6b0a4cba7d8a6176eea80e965f8f285a7bce79.zip -O sdl.zip && unzip sdl.zip && rm sdl.zip
 RUN cd SDL-* && \
   /opt/devkitpro/portlibs/wiiu/bin/powerpc-eabi-cmake -S. -Bbuild -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$DEVKITPRO/portlibs/wiiu && \
   cmake --build build -j $(nproc) && \
