@@ -93,7 +93,7 @@ typedef long ssize_t;
 	#define strncasecmp             strnicmp
 	#define strcasecmp              strcmpi
 #endif
-#if defined (__unix__) || defined (__APPLE__) || defined (UNIXCOMMON)
+#if defined (__unix__) || defined (__APPLE__) || defined (UNIXCOMMON) || defined(__WUT__)
 	#undef stricmp
 	#define stricmp(x,y) strcasecmp(x,y)
 	#undef strnicmp
@@ -109,7 +109,7 @@ char *nongnu_strcasestr(const char *in, const char *what);
 int startswith (const char *base, const char *tag);
 int endswith (const char *base, const char *tag);
 
-#if defined (_WIN32) || defined (__HAIKU__)
+#if defined (_WIN32) || defined (__HAIKU__) || defined(__WUT__)
 #define HAVE_DOSSTR_FUNCS
 #endif
 
@@ -144,6 +144,11 @@ size_t strlcpy(char *dst, const char *src, size_t siz);
 
 /* Boolean type definition */
 
+#ifdef __WUT__
+// Just use stdbool and be done with it, it's fine
+#include <stdbool.h>
+typedef bool boolean;
+#else
 // Note: C++ bool and C99/C11 _Bool are NOT compatible.
 // Historically, boolean was win32 BOOL on Windows. For equivalence, it's now
 // int32_t. "true" and "false" are only declared for C code; in C++, conversion
@@ -160,6 +165,7 @@ enum {false = 0, true = 1};
 #else
 #define false FALSE
 #define true TRUE
+#endif
 #endif
 #endif
 

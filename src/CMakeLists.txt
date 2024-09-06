@@ -232,6 +232,12 @@ if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
 	endif()
 endif()
 
+# Wii U stuff
+if (WUT)
+	target_compile_definitions(SRB2SDL2 PRIVATE -DNONET)
+	wut_create_rpx(SRB2SDL2)
+endif()
+
 # Compiler warnings configuration
 target_compile_options(SRB2SDL2 PRIVATE
 	# Using generator expressions to handle per-language compile options

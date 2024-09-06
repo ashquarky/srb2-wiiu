@@ -9,6 +9,10 @@ else()
 	set(NOT_SRB2_CONFIG_SHARED_INTERNAL_LIBRARIES ON)
 endif()
 
+if (WUT)
+	set(CMAKE_POSITION_INDEPENDENT_CODE OFF)
+endif()
+
 if(NOT "${SRB2_CONFIG_SYSTEM_LIBRARIES}")
 	include("cpm-sdl2.cmake")
 	include("cpm-sdl2-mixer.cmake")

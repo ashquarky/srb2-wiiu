@@ -5,6 +5,11 @@ if(${CMAKE_SYSTEM} MATCHES Linux)
 	return()
 endif()
 
+if(WUT)
+	# Asset installation isn't part of the WiiU target FOR NOW
+	return()
+endif()
+
 if("${SRB2_CONFIG_ASSET_DIRECTORY}" STREQUAL "")
 	message(WARNING "SRB2_CONFIG_ASSET_DIRECTORY is not set, so installation will not contain data files.")
 	return()
