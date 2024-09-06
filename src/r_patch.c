@@ -58,7 +58,7 @@ patch_t *Patch_CreateFromDoomPatch(softwarepatch_t *source)
 
 void Patch_CalcDataSizes(softwarepatch_t *source, size_t *total_pixels, size_t *total_posts)
 {
-	for (INT32 i = 0; i < source->width; i++)
+	for (INT32 i = 0; i < SHORT(source->width); i++)
 	{
 		doompost_t *src_posts = (doompost_t*)((UINT8 *)source + LONG(source->columnofs[i]));
 		for (doompost_t *post = src_posts; post->topdelta != 0xff ;)
