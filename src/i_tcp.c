@@ -19,7 +19,7 @@
 #include <unistd.h>
 #endif
 
-#ifndef NO_IPV6
+#if !defined(NO_IPV6) && !defined(__WIIU__)
 	#define HAVE_IPV6
 #endif
 

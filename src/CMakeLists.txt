@@ -234,7 +234,6 @@ endif()
 
 # Wii U stuff
 if (WUT)
-	target_compile_definitions(SRB2SDL2 PRIVATE -DNONET)
 	wut_create_rpx(SRB2SDL2)
 endif()
 
