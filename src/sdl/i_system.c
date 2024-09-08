@@ -69,6 +69,9 @@ typedef LPVOID (WINAPI *p_MapViewOfFile) (HANDLE, DWORD, DWORD, DWORD, SIZE_T);
 #include <whb/log_cafe.h>
 #include <whb/log_udp.h>
 #include <sys/iosupport.h>
+
+#include <sysapp/launch.h>
+#include <proc_ui/procui.h>
 #endif
 
 #ifdef HAVE_SDL
@@ -2496,6 +2499,21 @@ INT32 I_StartupSystem(void)
 	return 0;
 }
 
+#ifdef __WIIU__
+static void I_WiiuPrepShutdown(void)
+{
+	if (ProcUIInShutdown()) return;
+
+	// Explicitly launch the menu if the OS hasn't already picked a destination for us
+	SYSLaunchMenu();
+
+	SDL_Event ev;
+	while (SDL_WaitEvent(&ev) && ev.type != SDL_QUIT);
+}
+#else
+static void I_WiiuPrepShutdown(void) {}
+#endif
+
 //
 // I_Quit
 //
@@ -2521,6 +2539,7 @@ void I_Quit(void)
 	D_QuitNetGame();
 	CL_AbortDownloadResume();
 	M_FreePlayerSetupColors();
+	I_WiiuPrepShutdown();
 	I_ShutdownMusic();
 	I_ShutdownSound();
 	// use this for 1.28 19990220 by Kin
@@ -2575,8 +2594,10 @@ void I_Error(const char *error, ...)
 	if (shutdowning)
 	{
 		errorcount++;
-		if (errorcount == 1)
+		if (errorcount == 1) {
+			I_WiiuPrepShutdown();
 			SDLforceUngrabMouse();
+		}
 		// try to shutdown each subsystem separately
 		if (errorcount == 2)
 			I_ShutdownMusic();
@@ -2635,6 +2656,7 @@ void I_Error(const char *error, ...)
 	D_QuitNetGame();
 	CL_AbortDownloadResume();
 	M_FreePlayerSetupColors();
+	I_WiiuPrepShutdown();
 	I_ShutdownMusic();
 	I_ShutdownSound();
 	// use this for 1.28 19990220 by Kin
