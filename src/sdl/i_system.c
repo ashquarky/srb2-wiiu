@@ -2634,7 +2634,7 @@ void I_RemoveExitFunc(void (*func)())
 	}
 }
 
-#if !(defined (__unix__) || defined(__APPLE__) || defined (UNIXCOMMON))
+#if !(defined (__unix__) || defined(__APPLE__) || defined (UNIXCOMMON)) && defined(LOGMESSAGES)
 static void Shittycopyerror(const char *name)
 {
 	I_OutputMsg(
