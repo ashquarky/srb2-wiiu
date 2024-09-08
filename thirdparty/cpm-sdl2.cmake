@@ -2,7 +2,7 @@ if (WUT)
 	CPMAddPackage(
 			NAME SDL2
 			VERSION 2.28.5
-			URL "https://github.com/GaryOderNichts/SDL/archive/0d05aae60233940f423f65d2b804623013e2abb1.zip"
+			URL "https://github.com/devkitPro/SDL/archive/ed6b5f84ab43a4fc18edb95046038221d41c5d5d.zip"
 			EXCLUDE_FROM_ALL ON
 			OPTIONS
 			"BUILD_SHARED_LIBS ${SRB2_CONFIG_SHARED_INTERNAL_LIBRARIES}"
