@@ -67,9 +67,8 @@ typedef LPVOID (WINAPI *p_MapViewOfFile) (HANDLE, DWORD, DWORD, DWORD, SIZE_T);
 #include <whb/log.h>
 #include <whb/log_module.h>
 #include <whb/log_cafe.h>
-
-#include <sysapp/launch.h>
-#include <proc_ui/procui.h>
+#include <whb/log_udp.h>
+#include <sys/iosupport.h>
 #endif
 
 #ifdef HAVE_SDL
@@ -902,10 +901,6 @@ void I_OutputMsg(const char *fmt, ...)
 		fflush(logstream);
 		(void)d;
 	}
-#endif
-
-#ifdef __WIIU__
-	WHBLogWrite(txt);
 #endif
 
 #if defined (_WIN32)
@@ -2454,6 +2449,15 @@ static void I_Fork(void)
 }
 #endif/*NEWSIGNALHANDLER*/
 
+static ssize_t wiiu_log_write(struct _reent* r, void* fd, const char* ptr, size_t len) {
+	WHBLogPrintf("%*.*s", len, len, ptr);
+	return len;
+}
+static const devoptab_t dotab_stdout = {
+	.name = "stdout_whb",
+	.write_r = wiiu_log_write,
+};
+
 INT32 I_StartupSystem(void)
 {
 	SDL_version SDLcompiled;
@@ -2463,7 +2467,10 @@ INT32 I_StartupSystem(void)
 #ifdef __WIIU__
 	if (!WHBLogModuleInit()) {
 		WHBLogCafeInit();
+		WHBLogUdpInit();
 	}
+	devoptab_list[STD_OUT] = &dotab_stdout;
+	devoptab_list[STD_ERR] = &dotab_stdout;
 #endif
 #ifdef HAVE_THREADS
 	I_start_threads();
@@ -2779,6 +2786,7 @@ void I_ShutdownSystem(void)
 #ifdef __WIIU__
 	WHBLogModuleDeinit();
 	WHBLogCafeDeinit();
+	WHBLogUdpDeinit();
 #endif
 
 }
@@ -3117,7 +3125,7 @@ const char *I_LocateWad(void)
 		waddir = _fullpath(NULL, waddir, MAX_PATH);
 		SetCurrentDirectoryA(waddir);
 #else
-		waddir = realpath(waddir, NULL);
+		// waddir = realpath(waddir, NULL);
 		if (chdir(waddir) == -1)
 			I_OutputMsg("Couldn't change working directory\n");
 #endif

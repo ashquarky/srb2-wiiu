@@ -24,22 +24,9 @@
 
 #include <signal.h>
 
-#ifdef _MSC_VER
-#pragma warning(disable : 4214 4244)
-#endif
-
 #ifdef HAVE_SDL
 #define _MATH_DEFINES_DEFINED
 #include "SDL.h"
-
-#ifdef _MSC_VER
-#include <windows.h>
-#pragma warning(default : 4214 4244)
-#endif
-
-#ifdef HAVE_TTF
-#include "i_ttf.h"
-#endif
 
 #ifdef HAVE_IMAGE
 #include "SDL_image.h"
@@ -54,10 +41,6 @@
 #endif
 
 #include "../doomdef.h"
-
-#ifdef _WIN32
-#include "SDL_syswm.h"
-#endif
 
 #include "../doomstat.h"
 #include "../i_system.h"
@@ -86,6 +69,20 @@
 #include "ogl_sdl.h"
 #endif
 
+#include <whb/gfx.h>
+#include <gx2/shaders.h>
+#include <gx2/registers.h>
+#include <gx2/mem.h>
+#include <gx2/enum.h>
+#include <gx2/draw.h>
+#include <gx2/surface.h>
+#include <gx2/texture.h>
+#include <gx2/sampler.h>
+#include <gx2/utils.h>
+#include "CafeGLSLCompiler.h"
+
+#include <coreinit/memdefaultheap.h>
+
 // maximum number of windowed modes (see windowedModes[][])
 #define MAXWINMODES (21)
 
@@ -100,7 +97,7 @@ static char vidModeName[33][32]; // allow 33 different modes
 rendermode_t rendermode = render_soft;
 rendermode_t chosenrendermode = render_none; // set by command line arguments
 
-static void VidWaitChanged(void);
+static void VidWaitChanged(void) {}
 
 // synchronize page flipping with screen refresh
 consvar_t cv_vidwait = CVAR_INIT ("vid_wait", "On", CV_SAVE | CV_CALL, CV_OnOff, VidWaitChanged);
@@ -144,11 +141,32 @@ static       SDL_bool    usesdl2soft = SDL_FALSE;
 static       SDL_bool    borderlesswindow = SDL_FALSE;
 
 // SDL2 vars
-SDL_Window   *window;
-SDL_Renderer *renderer;
-static SDL_Texture  *texture;
 static SDL_bool      havefocus = SDL_TRUE;
 static const char *fallback_resolution_name = "Fallback";
+
+// GX2 vars
+WHBGfxShaderGroup *basic_shader;
+int aPosition;
+int aTexCoord;
+
+GX2Texture main_screen = {
+	.surface = {
+		.aa = GX2_AA_MODE1X,
+		.use = GX2_SURFACE_USE_TEXTURE,
+		.dim = GX2_SURFACE_DIM_TEXTURE_2D,
+		.depth = 1,
+		.mipLevels = 1,
+		.swizzle = 0,
+		.tileMode = GX2_TILE_MODE_LINEAR_ALIGNED,
+	},
+	.viewNumMips = 1,
+	.viewNumSlices = 1,
+	.compMap = GX2_COMP_MAP(
+		GX2_SQ_SEL_R, GX2_SQ_SEL_G, GX2_SQ_SEL_B, GX2_SQ_SEL_A
+	),
+};
+
+GX2Sampler sampler;
 
 // windowed video modes from which to choose from.
 static INT32 windowedModes[MAXWINMODES][2] =
@@ -175,123 +193,6 @@ static INT32 windowedModes[MAXWINMODES][2] =
 	{ 320, 240}, // 1.33,1.00
 	{ 320, 200}, // 1.60,1.00
 };
-
-static void Impl_VideoSetupSDLBuffer(void);
-static void Impl_VideoSetupBuffer(void);
-static SDL_bool Impl_CreateWindow(SDL_bool fullscreen);
-//static void Impl_SetWindowName(const char *title);
-static void Impl_SetWindowIcon(void);
-
-static void SDLSetMode(INT32 width, INT32 height, SDL_bool fullscreen, SDL_bool reposition)
-{
-	static SDL_bool wasfullscreen = SDL_FALSE;
-	Uint32 rmask;
-	Uint32 gmask;
-	Uint32 bmask;
-	Uint32 amask;
-	int bpp = 16;
-	int sw_texture_format = SDL_PIXELFORMAT_ABGR8888;
-
-	realwidth = vid.width;
-	realheight = vid.height;
-
-	if (window)
-	{
-		if (fullscreen)
-		{
-			wasfullscreen = SDL_TRUE;
-			SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
-		}
-		else // windowed mode
-		{
-			if (wasfullscreen)
-			{
-				wasfullscreen = SDL_FALSE;
-				SDL_SetWindowFullscreen(window, 0);
-			}
-			// Reposition window only in windowed mode
-			SDL_SetWindowSize(window, width, height);
-			if (reposition)
-			{
-				SDL_SetWindowPosition(window,
-					SDL_WINDOWPOS_CENTERED_DISPLAY(SDL_GetWindowDisplayIndex(window)),
-					SDL_WINDOWPOS_CENTERED_DISPLAY(SDL_GetWindowDisplayIndex(window))
-				);
-			}
-		}
-	}
-	else
-	{
-		Impl_CreateWindow(fullscreen);
-		wasfullscreen = fullscreen;
-		SDL_SetWindowSize(window, width, height);
-		if (fullscreen)
-		{
-			SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
-		}
-	}
-
-#ifdef HWRENDER
-	if (rendermode == render_opengl)
-	{
-		OglSdlSurface(vid.width, vid.height);
-	}
-#endif
-
-	if (rendermode == render_soft)
-	{
-		SDL_RenderClear(renderer);
-		SDL_RenderSetLogicalSize(renderer, width, height);
-		// Set up Texture
-		realwidth = width;
-		realheight = height;
-		if (texture != NULL)
-		{
-			SDL_DestroyTexture(texture);
-		}
-
-		if (!usesdl2soft)
-		{
-			sw_texture_format = SDL_PIXELFORMAT_RGB565;
-		}
-		else
-		{
-			bpp = 32;
-			sw_texture_format = SDL_PIXELFORMAT_RGBA8888;
-		}
-
-		texture = SDL_CreateTexture(renderer, sw_texture_format, SDL_TEXTUREACCESS_STREAMING, width, height);
-
-		// Set up SW surface
-		if (vidSurface != NULL)
-		{
-			SDL_FreeSurface(vidSurface);
-		}
-		if (vid.buffer)
-		{
-			free(vid.buffer);
-			vid.buffer = NULL;
-		}
-		SDL_PixelFormatEnumToMasks(sw_texture_format, &bpp, &rmask, &gmask, &bmask, &amask);
-		vidSurface = SDL_CreateRGBSurface(0, width, height, bpp, rmask, gmask, bmask, amask);
-	}
-}
-
-static void VidWaitChanged(void)
-{
-	if (renderer && rendermode == render_soft)
-	{
-#if SDL_VERSION_ATLEAST(2, 0, 18)
-		SDL_RenderSetVSync(renderer, cv_vidwait.value ? 1 : 0);
-#endif
-	}
-#ifdef HWRENDER
-	else if (rendermode == render_opengl && sdlglcontext != NULL && SDL_GL_GetCurrentContext() == sdlglcontext)
-	{
-		SDL_GL_SetSwapInterval(cv_vidwait.value ? 1 : 0);
-	}
-#endif
-}
 
 static INT32 Impl_SDL_Scancode_To_Keycode(SDL_Scancode code)
 {
@@ -410,32 +311,22 @@ static boolean ShouldGrabMouse(void)
 
 static void SDLdoGrabMouse(void)
 {
-	SDL_ShowCursor(SDL_DISABLE);
-	SDL_SetWindowGrab(window, SDL_TRUE);
-	if (SDL_SetRelativeMouseMode(SDL_TRUE) == 0) // already warps mouse if successful
-		wrapmouseok = SDL_TRUE; // TODO: is wrapmouseok or HalfWarpMouse needed anymore?
+
 }
 
 static void SDLdoUngrabMouse(void)
 {
-	SDL_ShowCursor(SDL_ENABLE);
-	SDL_SetWindowGrab(window, SDL_FALSE);
-	wrapmouseok = SDL_FALSE;
-	SDL_SetRelativeMouseMode(SDL_FALSE);
+
 }
 
 void SDLforceUngrabMouse(void)
 {
-	if (SDL_WasInit(SDL_INIT_VIDEO)==SDL_INIT_VIDEO && window != NULL)
-		SDLdoUngrabMouse();
+
 }
 
 void I_UpdateMouseGrab(void)
 {
-	if (SDL_WasInit(SDL_INIT_VIDEO) == SDL_INIT_VIDEO && window != NULL
-	&& SDL_GetMouseFocus() == window && SDL_GetKeyboardFocus() == window
-	&& USE_MOUSEINPUT && ShouldGrabMouse())
-		SDLdoGrabMouse();
+
 }
 
 void I_SetMouseGrab(boolean grab)
@@ -451,33 +342,9 @@ static void VID_Command_NumModes_f (void)
 	CONS_Printf(M_GetText("%d video mode(s) available(s)\n"), VID_NumModes());
 }
 
-// SDL2 doesn't have SDL_GetVideoSurface or a lot of the SDL_Surface flags that SDL 1.2 had
-static void SurfaceInfo(const SDL_Surface *infoSurface, const char *SurfaceText)
-{
-	INT32 vfBPP;
-
-	if (!infoSurface)
-		return;
-
-	if (!SurfaceText)
-		SurfaceText = M_GetText("Unknown Surface");
-
-	vfBPP = infoSurface->format?infoSurface->format->BitsPerPixel:0;
-
-	CONS_Printf("\x82" "%s\n", SurfaceText);
-	CONS_Printf(M_GetText(" %ix%i at %i bit color\n"), infoSurface->w, infoSurface->h, vfBPP);
-
-	if (infoSurface->flags&SDL_PREALLOC)
-		CONS_Printf("%s", M_GetText(" Uses preallocated memory\n"));
-	else
-		CONS_Printf("%s", M_GetText(" Stored in system memory\n"));
-	if (infoSurface->flags&SDL_RLEACCEL)
-		CONS_Printf("%s", M_GetText(" Colorkey RLE acceleration blit\n"));
-}
-
 static void VID_Command_Info_f (void)
 {
-#if 0
+#if 1
 	SDL2STUB();
 #else
 #if 0
@@ -709,124 +576,6 @@ static void Impl_HandleTextEvent(SDL_TextInputEvent evt)
 	D_PostEvent(&event);
 }
 
-static void Impl_HandleMouseMotionEvent(SDL_MouseMotionEvent evt)
-{
-	static boolean firstmove = true;
-
-	if (USE_MOUSEINPUT)
-	{
-		if ((SDL_GetMouseFocus() != window && SDL_GetKeyboardFocus() != window) || (!ShouldGrabMouse() && !firstmove))
-		{
-			SDLdoUngrabMouse();
-			firstmove = false;
-			return;
-		}
-
-		// If using relative mouse mode, don't post an event_t just now,
-		// add on the offsets so we can make an overall event later.
-		if (SDL_GetRelativeMouseMode())
-		{
-			if (SDL_GetMouseFocus() == window && SDL_GetKeyboardFocus() == window)
-			{
-				mousemovex += evt.xrel;
-				mousemovey += evt.yrel;
-				SDL_SetWindowGrab(window, SDL_TRUE);
-			}
-			firstmove = false;
-			return;
-		}
-
-		// If the event is from warping the pointer to middle
-		// of the screen then ignore it.
-		if ((evt.x == realwidth/2) && (evt.y == realheight/2))
-		{
-			firstmove = false;
-			return;
-		}
-
-		// Don't send an event_t if not in relative mouse mode anymore,
-		// just grab and set relative mode
-		// this fixes the stupid camera jerk on mouse entering bug
-		// -- Monster Iestyn
-		if (SDL_GetMouseFocus() == window && SDL_GetKeyboardFocus() == window)
-		{
-			SDLdoGrabMouse();
-		}
-	}
-
-	firstmove = false;
-}
-
-static void Impl_HandleMouseButtonEvent(SDL_MouseButtonEvent evt, Uint32 type)
-{
-	event_t event;
-
-	SDL_memset(&event, 0, sizeof(event_t));
-
-	// Ignore the event if the mouse is not actually focused on the window.
-	// This can happen if you used the mouse to restore keyboard focus;
-	// this apparently makes a mouse button down event but not a mouse button up event,
-	// resulting in whatever key was pressed down getting "stuck" if we don't ignore it.
-	// -- Monster Iestyn (28/05/18)
-	if (SDL_GetMouseFocus() != window || ShouldIgnoreMouse())
-		return;
-
-	/// \todo inputEvent.button.which
-	if (USE_MOUSEINPUT)
-	{
-		if (type == SDL_MOUSEBUTTONUP)
-		{
-			event.type = ev_keyup;
-		}
-		else if (type == SDL_MOUSEBUTTONDOWN)
-		{
-			event.type = ev_keydown;
-		}
-		else return;
-		if (evt.button == SDL_BUTTON_MIDDLE)
-			event.key = KEY_MOUSE1+2;
-		else if (evt.button == SDL_BUTTON_RIGHT)
-			event.key = KEY_MOUSE1+1;
-		else if (evt.button == SDL_BUTTON_LEFT)
-			event.key = KEY_MOUSE1;
-		else if (evt.button == SDL_BUTTON_X1)
-			event.key = KEY_MOUSE1+3;
-		else if (evt.button == SDL_BUTTON_X2)
-			event.key = KEY_MOUSE1+4;
-		if (event.type == ev_keyup || event.type == ev_keydown)
-		{
-			D_PostEvent(&event);
-		}
-	}
-}
-
-static void Impl_HandleMouseWheelEvent(SDL_MouseWheelEvent evt)
-{
-	event_t event;
-
-	SDL_memset(&event, 0, sizeof(event_t));
-
-	if (evt.y > 0)
-	{
-		event.key = KEY_MOUSEWHEELUP;
-		event.type = ev_keydown;
-	}
-	if (evt.y < 0)
-	{
-		event.key = KEY_MOUSEWHEELDOWN;
-		event.type = ev_keydown;
-	}
-	if (evt.y == 0)
-	{
-		event.key = 0;
-		event.type = ev_keyup;
-	}
-	if (event.type == ev_keyup || event.type == ev_keydown)
-	{
-		D_PostEvent(&event);
-	}
-}
-
 static void Impl_HandleJoystickAxisEvent(SDL_JoyAxisEvent evt)
 {
 	event_t event;
@@ -959,18 +708,6 @@ void I_GetEvent(void)
 				break;
 			case SDL_TEXTINPUT:
 				Impl_HandleTextEvent(evt.text);
-				break;
-			case SDL_MOUSEMOTION:
-				//if (!mouseMotionOnce)
-				Impl_HandleMouseMotionEvent(evt.motion);
-				//mouseMotionOnce = 1;
-				break;
-			case SDL_MOUSEBUTTONUP:
-			case SDL_MOUSEBUTTONDOWN:
-				Impl_HandleMouseButtonEvent(evt.button, evt.type);
-				break;
-			case SDL_MOUSEWHEEL:
-				Impl_HandleMouseWheelEvent(evt.wheel);
 				break;
 			case SDL_JOYAXISMOTION:
 				Impl_HandleJoystickAxisEvent(evt.jaxis);
@@ -1126,7 +863,7 @@ void I_GetEvent(void)
 	{
 		event_t event;
 		int wwidth, wheight;
-		SDL_GetWindowSize(window, &wwidth, &wheight);
+		//SDL_GetWindowSize(window, &wwidth, &wheight);
 		//SDL_memset(&event, 0, sizeof(event_t));
 		event.type = ev_mouse;
 		event.key = 0;
@@ -1197,24 +934,7 @@ void I_OsPolling(void)
 //
 void I_UpdateNoBlit(void)
 {
-	if (rendermode == render_none)
-		return;
-	if (exposevideo)
-	{
-#ifdef HWRENDER
-		if (rendermode == render_opengl)
-		{
-			OglSdlFinishUpdate(cv_vidwait.value);
-		}
-		else
-#endif
-		if (rendermode == render_soft)
-		{
-			SDL_RenderCopy(renderer, texture, NULL, NULL);
-			SDL_RenderPresent(renderer);
-		}
-	}
-	exposevideo = SDL_FALSE;
+	// TODO
 }
 
 // I_SkipFrame
@@ -1252,7 +972,29 @@ static inline boolean I_SkipFrame(void)
 //
 // I_FinishUpdate
 //
-static SDL_Rect src_rect = { 0, 0, 0, 0 };
+struct rect_vertexes {
+	struct {
+		float x;
+		float y;
+	} v[4];
+} __attribute__((aligned (GX2_VERTEX_BUFFER_ALIGNMENT)));
+
+struct rect_vertexes verts = {
+	{
+		[0] = {.x = -1.0f, .y = 1.0f},
+		[1] = {.x = 1.0f, .y = 1.0f},
+		[2] = {.x = 1.0f, .y = -1.0f},
+		[3] = {.x = -1.0f, .y = -1.0f},
+	}
+};
+struct rect_vertexes uvs = {
+	{
+		[0] = {.x = 0.0f, .y = 0.0f},
+		[1] = {.x = 1.0f, .y = 0.0f},
+		[2] = {.x = 1.0f, .y = 1.0f},
+		[3] = {.x = 0.0f, .y = 1.0f},
+	}
+};
 
 void I_FinishUpdate(void)
 {
@@ -1279,23 +1021,41 @@ void I_FinishUpdate(void)
 
 	if (rendermode == render_soft && screens[0])
 	{
-		if (!bufSurface) //Double-Check
-		{
-			Impl_VideoSetupSDLBuffer();
-		}
+		GX2Invalidate(GX2_INVALIDATE_MODE_CPU | GX2_INVALIDATE_MODE_TEXTURE, main_screen.surface.image, main_screen.surface.imageSize);
+		WHBGfxBeginRender();
+		WHBGfxBeginRenderTV();
+		WHBGfxClearColor(0.0f, 1.0f, 0.0f, 1.0f);
 
-		if (bufSurface)
-		{
-			SDL_BlitSurface(bufSurface, &src_rect, vidSurface, &src_rect);
-			// Fury -- there's no way around UpdateTexture, the GL backend uses it anyway
-			SDL_LockSurface(vidSurface);
-			SDL_UpdateTexture(texture, &src_rect, vidSurface->pixels, vidSurface->pitch);
-			SDL_UnlockSurface(vidSurface);
-		}
+		GX2SetDepthOnlyControl(FALSE, FALSE, GX2_COMPARE_FUNC_ALWAYS);
+		GX2SetColorControl(GX2_LOGIC_OP_COPY, 0xFF, FALSE, TRUE);
+		GX2SetBlendControl(
+			GX2_RENDER_TARGET_0,
+			/* RGB = [srcRGB * srcA] + [dstRGB * (1-srcA)] */
+			GX2_BLEND_MODE_SRC_ALPHA, GX2_BLEND_MODE_INV_SRC_ALPHA,
+			GX2_BLEND_COMBINE_MODE_ADD,
+			TRUE,
+			/* A = [srcA * 1] + [dstA * (1-srcA)] */
+			GX2_BLEND_MODE_ONE, GX2_BLEND_MODE_INV_SRC_ALPHA,
+			GX2_BLEND_COMBINE_MODE_ADD
+		);
 
-		SDL_RenderClear(renderer);
-		SDL_RenderCopy(renderer, texture, &src_rect, NULL);
-		SDL_RenderPresent(renderer);
+		GX2SetPixelSampler(&sampler, 0);
+		GX2SetPixelTexture(&main_screen, 0);
+		GX2Invalidate(GX2_INVALIDATE_MODE_CPU_ATTRIBUTE_BUFFER, &verts, sizeof(verts));
+		GX2Invalidate(GX2_INVALIDATE_MODE_CPU_ATTRIBUTE_BUFFER, &uvs, sizeof(uvs));
+
+		GX2SetAttribBuffer(aPosition, sizeof(verts), sizeof(verts.v[0]), &verts);
+		GX2SetAttribBuffer(aTexCoord, sizeof(uvs), sizeof(uvs.v[0]), &uvs);
+
+		GX2SetShaderMode(GX2_SHADER_MODE_UNIFORM_BLOCK);
+		GX2SetFetchShader(&basic_shader->fetchShader);
+		GX2SetVertexShader(basic_shader->vertexShader);
+		GX2SetPixelShader(basic_shader->pixelShader);
+
+		GX2DrawEx(GX2_PRIMITIVE_MODE_QUADS, 4, 0, 1);
+
+		WHBGfxFinishRenderTV();
+		WHBGfxFinishRender();
 	}
 #ifdef HWRENDER
 	else if (rendermode == render_opengl)
@@ -1351,9 +1111,7 @@ void I_SetPalette(RGBA_t *palette)
 		localPalette[i].g = palette[i].s.green;
 		localPalette[i].b = palette[i].s.blue;
 	}
-	//if (vidSurface) SDL_SetPaletteColors(vidSurface->format->palette, localPalette, 0, 256);
-	// Fury -- SDL2 vidSurface is a 32-bit surface buffer copied to the texture. It's not palletized, like bufSurface.
-	if (bufSurface) SDL_SetPaletteColors(bufSurface->format->palette, localPalette, 0, 256);
+	// TODO
 }
 
 // return number of fullscreen + X11 modes
@@ -1434,31 +1192,7 @@ static SDL_bool Impl_CreateContext(void)
 #endif
 	if (rendermode == render_soft)
 	{
-		int flags = 0; // Use this to set SDL_RENDERER_* flags now
-		if (usesdl2soft)
-			flags |= SDL_RENDERER_SOFTWARE;
-		else if (cv_vidwait.value)
-		{
-#if SDL_VERSION_ATLEAST(2, 0, 18)
-			// If SDL is new enough, we can turn off vsync later.
-			flags |= SDL_RENDERER_PRESENTVSYNC;
-#else
-			// However, if it isn't, we should just silently turn vid_wait off
-			// This is because the renderer will be created before the config
-			// is read and vid_wait is set from the user's preferences, and thus
-			// vid_wait will have no effect.
-			CV_StealthSetValue(&cv_vidwait, 0);
-#endif
-		}
-
-		if (!renderer)
-			renderer = SDL_CreateRenderer(window, -1, flags);
-		if (renderer == NULL)
-		{
-			CONS_Printf(M_GetText("Couldn't create rendering context: %s\n"), SDL_GetError());
-			return SDL_FALSE;
-		}
-		SDL_RenderSetLogicalSize(renderer, BASEVIDWIDTH, BASEVIDHEIGHT);
+		// TODO
 	}
 	return SDL_TRUE;
 }
@@ -1544,18 +1278,28 @@ boolean VID_CheckRenderer(void)
 		setrenderneeded = 0;
 	}
 
-	SDLSetMode(vid.width, vid.height, USE_FULLSCREEN, (setmodeneeded ? SDL_TRUE : SDL_FALSE));
-	Impl_VideoSetupBuffer();
-
 	if (rendermode == render_soft)
 	{
-		if (bufSurface)
-		{
-			SDL_FreeSurface(bufSurface);
-			bufSurface = NULL;
+		if (main_screen.surface.image) {
+			free(main_screen.surface.image);
 		}
 
-		SCR_SetDrawFuncs();
+		if (vid.bpp == 1) {
+			main_screen.surface.format = GX2_SURFACE_FORMAT_UNORM_R8;
+		} else {
+			CONS_Printf("Unsupported video depth %d\n", vid.bpp);
+		}
+
+		main_screen.surface.width = vid.width;
+		main_screen.surface.height = vid.height;
+		GX2CalcSurfaceSizeAndAlignment(&main_screen.surface);
+		GX2InitTextureRegs(&main_screen);
+
+		main_screen.surface.image = MEMAllocFromDefaultHeapEx(NUMSCREENS * main_screen.surface.imageSize, main_screen.surface.alignment);
+
+		vid.buffer = main_screen.surface.image;
+		vid.rowbytes = main_screen.surface.pitch;
+		vid.direct = NULL;
 	}
 #ifdef HWRENDER
 	else if (rendermode == render_opengl && rendererchanged)
@@ -1571,22 +1315,7 @@ boolean VID_CheckRenderer(void)
 static UINT32 refresh_rate;
 static UINT32 VID_GetRefreshRate(void)
 {
-	int index = SDL_GetWindowDisplayIndex(window);
-	SDL_DisplayMode m;
-
-	if (SDL_WasInit(SDL_INIT_VIDEO) == 0)
-	{
-		// Video not init yet.
-		return 0;
-	}
-
-	if (SDL_GetCurrentDisplayMode(index, &m) != 0)
-	{
-		// Error has occurred.
-		return 0;
-	}
-
-	return m.refresh_rate;
+	return 60;
 }
 
 INT32 VID_SetMode(INT32 modeNum)
@@ -1605,115 +1334,30 @@ INT32 VID_SetMode(INT32 modeNum)
 	vid.height = windowedModes[modeNum][1];
 	vid.modenum = modeNum;
 
-	//Impl_SetWindowName("SRB2 "VERSIONSTRING);
-	src_rect.w = vid.width;
-	src_rect.h = vid.height;
-
 	refresh_rate = VID_GetRefreshRate();
 
 	VID_CheckRenderer();
 	return SDL_TRUE;
 }
 
-static SDL_bool Impl_CreateWindow(SDL_bool fullscreen)
+WHBGfxShaderGroup* GLSL_CompileShader(const char* vsSrc, const char* psSrc)
 {
-	int flags = 0;
-
-	if (rendermode == render_none) // dedicated
-		return SDL_TRUE; // Monster Iestyn -- not sure if it really matters what we return here tbh
-
-	if (window != NULL)
-		return SDL_FALSE;
-
-	if (fullscreen)
-		flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
-
-	if (borderlesswindow)
-		flags |= SDL_WINDOW_BORDERLESS;
-
-#ifdef HWRENDER
-	if (vid.glstate == VID_GL_LIBRARY_LOADED)
-		flags |= SDL_WINDOW_OPENGL;
-
-	// Without a 24-bit depth buffer many visuals are ruined by z-fighting.
-	// Some GPU drivers may give us a 16-bit depth buffer since the
-	// default value for SDL_GL_DEPTH_SIZE is 16.
-	SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-#endif
-
-	// Create a window
-	window = SDL_CreateWindow("SRB2 "VERSIONSTRING, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-			realwidth, realheight, flags);
-
-
-	if (window == NULL)
-	{
-		CONS_Printf(M_GetText("Couldn't create window: %s\n"), SDL_GetError());
-		return SDL_FALSE;
+	char infoLog[1024];
+	GX2VertexShader* vs = GLSL_CompileVertexShader(vsSrc, infoLog, sizeof(infoLog), GLSL_COMPILER_FLAG_NONE);
+	if(!vs) {
+		OSReport("Failed to compile vertex shader. Infolog: %s\n", infoLog);
+		return NULL;
 	}
-
-	Impl_SetWindowIcon();
-
-	return Impl_CreateContext();
-}
-
-/*
-static void Impl_SetWindowName(const char *title)
-{
-	if (window == NULL)
-	{
-		return;
+	GX2PixelShader* ps = GLSL_CompilePixelShader(psSrc, infoLog, sizeof(infoLog), GLSL_COMPILER_FLAG_NONE);
+	if(!ps) {
+		OSReport("Failed to compile pixel shader. Infolog: %s\n", infoLog);
+		return NULL;
 	}
-	SDL_SetWindowTitle(window, title);
-}
-*/
-
-static void Impl_SetWindowIcon(void)
-{
-	if (window && icoSurface)
-		SDL_SetWindowIcon(window, icoSurface);
-}
-
-static void Impl_VideoSetupSDLBuffer(void)
-{
-	if (bufSurface != NULL)
-	{
-		SDL_FreeSurface(bufSurface);
-		bufSurface = NULL;
-	}
-	// Set up the SDL palletized buffer (copied to vidbuffer before being rendered to texture)
-	if (vid.bpp == 1)
-	{
-		bufSurface = SDL_CreateRGBSurfaceFrom(screens[0],vid.width,vid.height,8,
-			(int)vid.rowbytes,0x00000000,0x00000000,0x00000000,0x00000000); // 256 mode
-	}
-	else if (vid.bpp == 2) // Fury -- don't think this is used at all anymore
-	{
-		bufSurface = SDL_CreateRGBSurfaceFrom(screens[0],vid.width,vid.height,15,
-			(int)vid.rowbytes,0x00007C00,0x000003E0,0x0000001F,0x00000000); // 555 mode
-	}
-	if (bufSurface)
-	{
-		SDL_SetPaletteColors(bufSurface->format->palette, localPalette, 0, 256);
-	}
-	else
-	{
-		I_Error("%s", M_GetText("No system memory for SDL buffer surface\n"));
-	}
-}
-
-static void Impl_VideoSetupBuffer(void)
-{
-	// Set up game's software render buffer
-	vid.rowbytes = vid.width * vid.bpp;
-	vid.direct = NULL;
-	if (vid.buffer)
-		free(vid.buffer);
-	vid.buffer = calloc(NUMSCREENS, vid.rowbytes*vid.height);
-	if (!vid.buffer)
-	{
-		I_Error("%s", M_GetText("Not enough memory for video buffer\n"));
-	}
+	WHBGfxShaderGroup* shaderGroup = (WHBGfxShaderGroup*)malloc(sizeof(WHBGfxShaderGroup));
+	memset(shaderGroup, 0, sizeof(*shaderGroup));
+	shaderGroup->vertexShader = vs;
+	shaderGroup->pixelShader = ps;
+	return shaderGroup;
 }
 
 void I_StartupGraphics(void)
@@ -1738,25 +1382,46 @@ void I_StartupGraphics(void)
 
 	keyboard_started = true;
 
-#if !defined(HAVE_TTF)
-	// Previously audio was init here for questionable reasons?
-	if (SDL_InitSubSystem(SDL_INIT_VIDEO) < 0)
-	{
-		CONS_Printf(M_GetText("Couldn't initialize SDL's Video System: %s\n"), SDL_GetError());
+	WHBGfxInit();
+	boolean ok = GLSL_Init();
+	if (!ok) {
+		CONS_Printf(M_GetText("Couldn't start up shaders!\n"));
 		return;
 	}
-#endif
-	{
-		const char *vd = SDL_GetCurrentVideoDriver();
-		//CONS_Printf(M_GetText("Starting up with video driver: %s\n"), vd);
-		if (vd && (
-			strncasecmp(vd, "gcvideo", 8) == 0 ||
-			strncasecmp(vd, "fbcon", 6) == 0 ||
-			strncasecmp(vd, "wii", 4) == 0 ||
-			strncasecmp(vd, "psl1ght", 8) == 0
-		))
-			framebuffer = SDL_TRUE;
+
+	basic_shader = GLSL_CompileShader(R"VS(
+		#version 450 core
+		layout (location = 0) in vec2 aPosition;
+		layout (location = 1) in vec2 aTexCoord;
+		layout (location = 0) out vec2 tex_coord;
+
+		void main() {
+			gl_Position = vec4(aPosition, 0.0, 1.0);
+			tex_coord = aTexCoord;
+		}
+	)VS", R"PS(
+		#version 450 core
+		layout (location = 0) in vec2 tex_coord;
+		layout (location = 0) out vec4 colour;
+
+		layout (binding = 0) uniform sampler2D tex;
+
+		void main() {
+			colour = vec4(texture(tex, tex_coord).x, 0.0, 1.0, 1.0);
+			// colour = vec4(1.0, 0.0, 0.0, 1.0);
+		}
+	)PS");
+	if (!basic_shader) {
+		CONS_Printf(M_GetText("Failed to compile shader...\n"));
 	}
+
+	int buffer = 0;
+	aPosition = buffer++;
+	WHBGfxInitShaderAttribute(basic_shader, "aPosition", aPosition, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32);
+	aTexCoord = buffer++;
+	WHBGfxInitShaderAttribute(basic_shader, "aTexCoord", aTexCoord, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32);
+	WHBGfxInitFetchShader(basic_shader);
+	GX2InitSampler(&sampler, GX2_TEX_CLAMP_MODE_CLAMP, GX2_TEX_XY_FILTER_MODE_POINT);
 
 	// Renderer choices
 	// Takes priority over the config.
@@ -1851,8 +1516,6 @@ void I_StartupGraphics(void)
 
 	//VID_Command_Info_f();
 	SDLdoUngrabMouse();
-
-	SDL_RaiseWindow(window);
 
 	if (mousegrabok && !disable_mouse)
 		SDLdoGrabMouse();
