@@ -10,5 +10,10 @@ target_sources(SRB2SDL2 PRIVATE
 	hw_md3load.c
 	hw_model.c
 	hw_batching.c
-	r_opengl/r_opengl.c
 )
+
+if(WIIU)
+	target_sources(SRB2SDL2 PRIVATE r_gx2/r_gx2.c r_gx2/r_gx2mm.c)
+else()
+	target_sources(SRB2SDL2 PRIVATE r_opengl/r_opengl.c)
+endif()

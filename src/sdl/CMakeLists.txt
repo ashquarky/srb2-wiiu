@@ -2,7 +2,7 @@
 
 target_sources(SRB2SDL2 PRIVATE
 	mixer_sound.c
-	ogl_sdl.c
+	#ogl_sdl.c
 	i_threads.c
 	i_net.c
 	i_system.c

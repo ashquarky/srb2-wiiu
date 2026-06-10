@@ -278,6 +278,9 @@ static void SDLSetMode(INT32 width, INT32 height, SDL_bool fullscreen, SDL_bool 
 
 static void VidWaitChanged(void)
 {
+#ifdef __WIIU__
+	SDL_RenderSetVSync(renderer, cv_vidwait.value ? 1 : 0);
+#else
 	if (renderer && rendermode == render_soft)
 	{
 #if SDL_VERSION_ATLEAST(2, 0, 18)
@@ -289,6 +292,7 @@ static void VidWaitChanged(void)
 	{
 		SDL_GL_SetSwapInterval(cv_vidwait.value ? 1 : 0);
 	}
+#endif
 #endif
 }
 
@@ -1473,6 +1477,7 @@ void VID_PrepareModeList(void)
 
 static SDL_bool Impl_CreateContext(void)
 {
+#ifndef __WIIU__
 	// Renderer-specific stuff
 #ifdef HWRENDER
 	if ((rendermode == render_opengl)
@@ -1491,6 +1496,10 @@ static SDL_bool Impl_CreateContext(void)
 #endif
 	if (rendermode == render_soft)
 	{
+#else
+	if (1)
+	{
+#endif
 		int flags = 0; // Use this to set SDL_RENDERER_* flags now
 		if (usesdl2soft)
 			flags |= SDL_RENDERER_SOFTWARE;
@@ -1688,7 +1697,7 @@ static SDL_bool Impl_CreateWindow(SDL_bool fullscreen)
 	if (borderlesswindow)
 		flags |= SDL_WINDOW_BORDERLESS;
 
-#ifdef HWRENDER
+#if defined(HWRENDER) && !defined(__WIIU__)
 	if (vid.glstate == VID_GL_LIBRARY_LOADED)
 		flags |= SDL_WINDOW_OPENGL;
 
@@ -2002,7 +2011,7 @@ void I_ShutdownGraphics(void)
 	graphics_started = false;
 	I_OutputMsg("shut down\n");
 
-#ifdef HWRENDER
+#if defined(HWRENDER) && !defined(__WIIU__)
 	if (GLUhandle)
 		hwClose(GLUhandle);
 	if (sdlglcontext)

@@ -2369,9 +2369,9 @@ INT32 I_StartupSystem(void)
 	SDL_VERSION(&SDLcompiled)
 	SDL_GetVersion(&SDLlinked);
 #ifdef __WIIU__
-        if (!WHBLogModuleInit()) {
+        //if (!WHBLogModuleInit()) {
         	WHBLogCafeInit();
-        }
+        //}
 #endif
 #ifdef HAVE_THREADS
 	I_start_threads();
@@ -2708,7 +2708,7 @@ void I_ShutdownSystem(void)
 #endif
 
 #ifdef __WIIU__
-        WHBLogModuleDeinit();
+        //WHBLogModuleDeinit();
         WHBLogCafeDeinit();
 #endif
 
