@@ -63,6 +63,15 @@ typedef LPVOID (WINAPI *p_MapViewOfFile) (HANDLE, DWORD, DWORD, DWORD, SIZE_T);
 #pragma warning(disable : 4214 4244)
 #endif
 
+#ifdef __WIIU__
+#include <whb/log.h>
+#include <whb/log_module.h>
+#include <whb/log_cafe.h>
+
+#include <sysapp/launch.h>
+#include <proc_ui/procui.h>
+#endif
+
 #ifdef HAVE_SDL
 #define _MATH_DEFINES_DEFINED
 #include "SDL.h"
@@ -162,6 +171,8 @@ const char *wadDefaultPaths[] = {
 #elif defined (_WIN32)
 	"c:\\games\\srb2",
 	"\\games\\srb2",
+#elif defined(__WIIU__)
+	"fs:/vol/external01/SRB2",
 #endif
 	NULL
 };
@@ -178,6 +189,11 @@ const char *wadSearchPaths[] = {
 #endif
 	NULL
 };
+
+#ifdef __WIIU__
+#define NOCWD
+#define NOHOME
+#endif
 
 /**	\brief WAD file to look for
 */
@@ -886,6 +902,10 @@ void I_OutputMsg(const char *fmt, ...)
 		fflush(logstream);
 		(void)d;
 	}
+#endif
+
+#ifdef __WIIU__
+	WHBLogWrite(txt);
 #endif
 
 #if defined (_WIN32)
@@ -2440,6 +2460,11 @@ INT32 I_StartupSystem(void)
 	SDL_version SDLlinked;
 	SDL_VERSION(&SDLcompiled)
 	SDL_GetVersion(&SDLlinked);
+#ifdef __WIIU__
+	if (!WHBLogModuleInit()) {
+		WHBLogCafeInit();
+	}
+#endif
 #ifdef HAVE_THREADS
 	I_start_threads();
 	I_AddExitFunc(I_stop_threads);
@@ -2678,7 +2703,7 @@ void I_RemoveExitFunc(void (*func)())
 	}
 }
 
-#if !(defined (__unix__) || defined(__APPLE__) || defined (UNIXCOMMON))
+#if defined(LOGMESSAGES) && !(defined (__unix__) || defined(__APPLE__) || defined (UNIXCOMMON))
 static void Shittycopyerror(const char *name)
 {
 	I_OutputMsg(
@@ -2749,6 +2774,11 @@ void I_ShutdownSystem(void)
 		fclose(logstream);
 		logstream = NULL;
 	}
+#endif
+
+#ifdef __WIIU__
+	WHBLogModuleDeinit();
+	WHBLogCafeDeinit();
 #endif
 
 }

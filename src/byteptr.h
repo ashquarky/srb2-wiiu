@@ -13,6 +13,7 @@
 
 
 #include "endian.h"
+#include "doomtype.h"
 
 #ifndef SRB2_BIG_ENDIAN
 //

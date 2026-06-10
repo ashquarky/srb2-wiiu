@@ -181,6 +181,13 @@ if("${CMAKE_SYSTEM_NAME}" MATCHES "Darwin")
 	target_compile_definitions(SRB2SDL2 PRIVATE -DMACOSX)
 endif()
 
+if(WUT)
+	target_compile_definitions(SRB2SDL2 PRIVATE -DWIIU -DNO_IPV6)
+	# Force actually setting the -std flags
+	set_property(TARGET SRB2SDL2 PROPERTY C_STANDARD 11)
+	set_property(TARGET SRB2SDL2 PROPERTY CXX_STANDARD 17)
+endif()
+
 if("${SRB2_CONFIG_USE_GME}")
 	target_link_libraries(SRB2SDL2 PRIVATE gme)
 	target_compile_definitions(SRB2SDL2 PRIVATE -DHAVE_GME)
@@ -241,6 +248,10 @@ if (NOT SRB2_CONFIG_FORCE_NO_MS_BITFIELDS)
 			target_compile_options(SRB2SDL2 PRIVATE -mno-ms-bitfields)
 		endif()
 	endif()
+endif()
+
+if (WUT)
+	wut_create_rpx(SRB2SDL2)
 endif()
 
 # Compiler warnings configuration
@@ -458,6 +469,12 @@ endif()
 if(TARGET CURL::libcurl)
 	target_compile_definitions(SRB2SDL2 PRIVATE -DHAVE_CURL)
 	target_link_libraries(SRB2SDL2 PRIVATE CURL::libcurl)
+	# Bug in devkitPro portlibs 2026-06
+	if (WUT)
+		find_package(BrotliDec REQUIRED)
+		target_link_libraries(SRB2SDL2 PRIVATE ${BROTLIDEC_LINK_LIBRARIES})
+		target_include_directories(SRB2SDL2 PRIVATE ${BROTLIDEC_INCLUDE_DIRS})
+	endif()
 	message(STATUS "libcurl Found")
 else()
 	message(STATUS "No libcurl Found")
