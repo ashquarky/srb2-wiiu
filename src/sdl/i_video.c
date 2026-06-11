@@ -79,7 +79,7 @@
 #include <gx2/texture.h>
 #include <gx2/sampler.h>
 #include <gx2/utils.h>
-#include "CafeGLSLCompiler.h"
+#include "cafe/CafeGLSLCompiler.h"
 
 #include <coreinit/memdefaultheap.h>
 
@@ -125,7 +125,6 @@ static      INT32        mousemovex = 0, mousemovey = 0;
 static      SDL_Surface *vidSurface = NULL;
 static      SDL_Surface *bufSurface = NULL;
 static      SDL_Surface *icoSurface = NULL;
-static      SDL_Color    localPalette[256];
 #if 0
 static      SDL_Rect   **modeList = NULL;
 static       Uint8       BitsPerPixel = 16;
@@ -166,27 +165,46 @@ GX2Texture main_screen = {
 	),
 };
 
-GX2Sampler sampler;
+// For resolutions that aren't multiples of 256 (aka not 1280x720) we need to bounce the framebuffer
+GX2Surface temp_surf = {
+	.aa = GX2_AA_MODE1X,
+	.use = GX2_SURFACE_USE_TEXTURE,
+	.dim = GX2_SURFACE_DIM_TEXTURE_2D,
+	.depth = 1,
+	.mipLevels = 1,
+	.swizzle = 0,
+	.tileMode = GX2_TILE_MODE_LINEAR_SPECIAL,
+};
+
+GX2Texture colour_table = {
+	.surface = {
+		.aa = GX2_AA_MODE1X,
+		.use = GX2_SURFACE_USE_TEXTURE,
+		.dim = GX2_SURFACE_DIM_TEXTURE_2D,
+		.depth = 1,
+		.mipLevels = 1,
+		.swizzle = 0,
+		.tileMode = GX2_TILE_MODE_LINEAR_ALIGNED,
+
+		.width = 256,
+		.height = 1,
+		.format = GX2_SURFACE_FORMAT_UNORM_R8_G8_B8_A8,
+	},
+	.viewNumMips = 1,
+	.viewNumSlices = 1,
+	.compMap = GX2_COMP_MAP(
+		GX2_SQ_SEL_R, GX2_SQ_SEL_G, GX2_SQ_SEL_B, GX2_SQ_SEL_A
+	),
+};
+
+GX2Sampler sampler_sharp;
 
 // windowed video modes from which to choose from.
 static INT32 windowedModes[MAXWINMODES][2] =
 {
-	{1920,1200}, // 1.60,6.00
-	{1920,1080}, // 1.66
-	{1680,1050}, // 1.60,5.25
-	{1600,1200}, // 1.33
-	{1600,1000}, // 1.60,5.00
-	{1600, 900}, // 1.66
-	{1536, 864}, // 1.66,4.80
-	{1366, 768}, // 1.66
-	{1440, 900}, // 1.60,4.50
-	{1280,1024}, // 1.33?
 	{1280, 960}, // 1.33,4.00
 	{1280, 800}, // 1.60,4.00
 	{1280, 720}, // 1.66
-	{1152, 864}, // 1.33,3.60
-	{1024, 768}, // 1.33,3.20
-	{ 960, 600}, // 1.60,3.00
 	{ 800, 600}, // 1.33,2.50
 	{ 640, 480}, // 1.33,2.00
 	{ 640, 400}, // 1.60,2.00
@@ -1021,6 +1039,11 @@ void I_FinishUpdate(void)
 
 	if (rendermode == render_soft && screens[0])
 	{
+		if (vid.width != main_screen.surface.pitch) {
+			// Slow blit path
+			GX2CopySurface(&temp_surf, 0, 0, &main_screen.surface, 0, 0);
+		}
+
 		GX2Invalidate(GX2_INVALIDATE_MODE_CPU | GX2_INVALIDATE_MODE_TEXTURE, main_screen.surface.image, main_screen.surface.imageSize);
 		WHBGfxBeginRender();
 		WHBGfxBeginRenderTV();
@@ -1039,8 +1062,10 @@ void I_FinishUpdate(void)
 			GX2_BLEND_COMBINE_MODE_ADD
 		);
 
-		GX2SetPixelSampler(&sampler, 0);
+		GX2SetPixelSampler(&sampler_sharp, 0);
 		GX2SetPixelTexture(&main_screen, 0);
+		GX2SetPixelSampler(&sampler_sharp, 1);
+		GX2SetPixelTexture(&colour_table, 1);
 		GX2Invalidate(GX2_INVALIDATE_MODE_CPU_ATTRIBUTE_BUFFER, &verts, sizeof(verts));
 		GX2Invalidate(GX2_INVALIDATE_MODE_CPU_ATTRIBUTE_BUFFER, &uvs, sizeof(uvs));
 
@@ -1095,23 +1120,35 @@ void I_ReadScreen(UINT8 *scr)
 		I_Error ("I_ReadScreen: called while in non-software mode");
 	else
 		VID_BlitLinearScreen(screens[0], scr,
-			vid.width*vid.bpp, vid.height,
+			vid.width, vid.height,
 			vid.rowbytes, vid.rowbytes);
 }
 
+struct gx2_colour {
+	uint8_t r, g, b, a;
+};
 //
 // I_SetPalette
 //
 void I_SetPalette(RGBA_t *palette)
 {
-	size_t i;
-	for (i=0; i<256; i++)
-	{
-		localPalette[i].r = palette[i].s.red;
-		localPalette[i].g = palette[i].s.green;
-		localPalette[i].b = palette[i].s.blue;
+
+	if (!colour_table.surface.image) {
+		GX2CalcSurfaceSizeAndAlignment(&colour_table.surface);
+		GX2InitTextureRegs(&colour_table);
+
+		colour_table.surface.image = MEMAllocFromDefaultHeapEx(colour_table.surface.imageSize, colour_table.surface.alignment);
 	}
-	// TODO
+
+	for (size_t i = 0; i < 256; i++) {
+		struct gx2_colour* table = colour_table.surface.image;
+		table[i].r = palette[i].s.red;
+		table[i].g = palette[i].s.green;
+		table[i].b = palette[i].s.blue;
+		table[i].a = 0xFF;
+	}
+
+	GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, colour_table.surface.image, colour_table.surface.imageSize);
 }
 
 // return number of fullscreen + X11 modes
@@ -1280,12 +1317,19 @@ boolean VID_CheckRenderer(void)
 
 	if (rendermode == render_soft)
 	{
+		// screen texture
 		if (main_screen.surface.image) {
-			free(main_screen.surface.image);
+			MEMFreeToDefaultHeap(main_screen.surface.image);
+			main_screen.surface.image = NULL;
+		}
+		if (temp_surf.image) {
+			MEMFreeToDefaultHeap(temp_surf.image);
+			temp_surf.image = NULL;
 		}
 
 		if (vid.bpp == 1) {
 			main_screen.surface.format = GX2_SURFACE_FORMAT_UNORM_R8;
+			temp_surf.format = GX2_SURFACE_FORMAT_UNORM_R8;
 		} else {
 			CONS_Printf("Unsupported video depth %d\n", vid.bpp);
 		}
@@ -1295,10 +1339,24 @@ boolean VID_CheckRenderer(void)
 		GX2CalcSurfaceSizeAndAlignment(&main_screen.surface);
 		GX2InitTextureRegs(&main_screen);
 
-		main_screen.surface.image = MEMAllocFromDefaultHeapEx(NUMSCREENS * main_screen.surface.imageSize, main_screen.surface.alignment);
+		temp_surf.width = vid.width;
+		temp_surf.height = vid.height;
+		GX2CalcSurfaceSizeAndAlignment(&temp_surf);
 
-		vid.buffer = main_screen.surface.image;
-		vid.rowbytes = main_screen.surface.pitch;
+		if (vid.width != main_screen.surface.pitch) {
+			// bounce texture
+			CONS_Printf("Video width %d does not match stride %d! Video updates slow\n", vid.width, main_screen.surface.pitch);
+			temp_surf.image = MEMAllocFromDefaultHeapEx(NUMSCREENS * temp_surf.imageSize, temp_surf.alignment);
+			main_screen.surface.image = MEMAllocFromDefaultHeapEx(main_screen.surface.imageSize, main_screen.surface.alignment);
+
+			vid.buffer = temp_surf.image;
+			vid.rowbytes = temp_surf.pitch;
+		} else {
+			// use main screen directly
+			main_screen.surface.image = MEMAllocFromDefaultHeapEx(NUMSCREENS * main_screen.surface.imageSize, main_screen.surface.alignment);
+			vid.buffer = main_screen.surface.image;
+			vid.rowbytes = main_screen.surface.pitch;
+		}
 		vid.direct = NULL;
 	}
 #ifdef HWRENDER
@@ -1360,6 +1418,15 @@ WHBGfxShaderGroup* GLSL_CompileShader(const char* vsSrc, const char* psSrc)
 	return shaderGroup;
 }
 
+const char main_frag[] = {
+#embed "cafe/main.frag"
+	, 0
+};
+const char main_vert[] = {
+#embed "cafe/main.vert"
+	, 0
+};
+
 void I_StartupGraphics(void)
 {
 	if (dedicated)
@@ -1389,28 +1456,7 @@ void I_StartupGraphics(void)
 		return;
 	}
 
-	basic_shader = GLSL_CompileShader(R"VS(
-		#version 450 core
-		layout (location = 0) in vec2 aPosition;
-		layout (location = 1) in vec2 aTexCoord;
-		layout (location = 0) out vec2 tex_coord;
-
-		void main() {
-			gl_Position = vec4(aPosition, 0.0, 1.0);
-			tex_coord = aTexCoord;
-		}
-	)VS", R"PS(
-		#version 450 core
-		layout (location = 0) in vec2 tex_coord;
-		layout (location = 0) out vec4 colour;
-
-		layout (binding = 0) uniform sampler2D tex;
-
-		void main() {
-			colour = vec4(texture(tex, tex_coord).x, 0.0, 1.0, 1.0);
-			// colour = vec4(1.0, 0.0, 0.0, 1.0);
-		}
-	)PS");
+	basic_shader = GLSL_CompileShader(main_vert, main_frag);
 	if (!basic_shader) {
 		CONS_Printf(M_GetText("Failed to compile shader...\n"));
 	}
@@ -1421,7 +1467,7 @@ void I_StartupGraphics(void)
 	aTexCoord = buffer++;
 	WHBGfxInitShaderAttribute(basic_shader, "aTexCoord", aTexCoord, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32);
 	WHBGfxInitFetchShader(basic_shader);
-	GX2InitSampler(&sampler, GX2_TEX_CLAMP_MODE_CLAMP, GX2_TEX_XY_FILTER_MODE_POINT);
+	GX2InitSampler(&sampler_sharp, GX2_TEX_CLAMP_MODE_CLAMP, GX2_TEX_XY_FILTER_MODE_POINT);
 
 	// Renderer choices
 	// Takes priority over the config.
