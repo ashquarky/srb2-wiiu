@@ -600,7 +600,6 @@ static lumpinfo_t* ResGetLumpsZip (FILE* handle, UINT16* nlmp)
 		char* trimname;
 		char* dotpos;
 
-		CONS_Printf("Lump %d...\n", i);
 		if (fread(&zentry, 1, sizeof(zentry_t), handle) < sizeof(zentry_t))
 		{
 			CONS_Alert(CONS_ERROR, "Failed to read central directory (%s)\n", M_FileError(handle));
