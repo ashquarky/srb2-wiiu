@@ -2685,6 +2685,9 @@ W_VerifyPK3 (FILE *fp, lumpchecklist_t *checklist, boolean status)
 
 	char lumpname[9];
 
+	struct timespec start, end;
+	clock_gettime(CLOCK_MONOTONIC, &start);
+
 	// Haha the ResGetLumpsZip function doesn't
 	// check for file errors, so neither will I.
 
@@ -2756,6 +2759,8 @@ W_VerifyPK3 (FILE *fp, lumpchecklist_t *checklist, boolean status)
 		data_size +=
 			sizeof *zentry + SHORT(zentry->namelen) + SHORT(zentry->xtralen) + SHORT(zentry->commlen);
 
+		// Seeking around to check every file is just too slow on Wii U.
+#ifndef __WIIU__
 		if (fseek(fp, LONG(zentry->offset), SEEK_SET) != 0)
 			goto error;
 
@@ -2764,10 +2769,17 @@ W_VerifyPK3 (FILE *fp, lumpchecklist_t *checklist, boolean status)
 
 		data_size +=
 			sizeof zlentry + SHORT(zlentry.namelen) + SHORT(zlentry.xtralen) + LONG(zlentry.compsize);
+#endif
 	}
 
 	free(cdir);
 
+	clock_gettime(CLOCK_MONOTONIC, &end);
+	uint64_t delta_us = (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_nsec - start.tv_nsec) / 1000;
+	CONS_Printf("W_VerifyPK3 done in %lldus\n", delta_us);
+
+	// Since we didn't consider the local file entries on Wii U, these checks are also invalid.
+#ifndef __WIIU__
 	if (data_size < file_size)
 	{
 		const char * error = "ZIP file has holes (%ld extra bytes)\n";
@@ -2784,6 +2796,9 @@ W_VerifyPK3 (FILE *fp, lumpchecklist_t *checklist, boolean status)
 	{
 		return verified;
 	}
+#else
+	return verified;
+#endif
 error:
 	free(cdir);
 	return true;
