@@ -174,6 +174,7 @@ const char *wadDefaultPaths[] = {
 	"c:\\games\\srb2",
 	"\\games\\srb2",
 #elif defined(__WIIU__)
+	"fs:/vol/content",
 	"fs:/vol/external01/SRB2",
 #endif
 	NULL

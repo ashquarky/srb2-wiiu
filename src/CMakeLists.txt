@@ -252,6 +252,12 @@ endif()
 
 if (WUT)
 	wut_create_rpx(SRB2SDL2)
+	wut_create_wuhb(SRB2SDL2
+			CONTENT "${CMAKE_SOURCE_DIR}/assets/installer"
+			NAME "Sonic Robo Blast 2"
+			SHORTNAME "SRB2"
+			AUTHOR "Sonic Team Jr"
+	)
 endif()
 
 # Compiler warnings configuration
