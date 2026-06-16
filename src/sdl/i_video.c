@@ -79,8 +79,11 @@
 #include <gx2/texture.h>
 #include <gx2/sampler.h>
 #include <gx2/utils.h>
+#include <gx2r/surface.h>
 #include "cafe/CafeGLSLCompiler.h"
 
+#include <whb/proc.h>
+#include <proc_ui/procui.h>
 #include <coreinit/memdefaultheap.h>
 
 // maximum number of windowed modes (see windowedModes[][])
@@ -151,7 +154,6 @@ int aTexCoord;
 GX2Texture main_screen = {
 	.surface = {
 		.aa = GX2_AA_MODE1X,
-		.use = GX2_SURFACE_USE_TEXTURE,
 		.dim = GX2_SURFACE_DIM_TEXTURE_2D,
 		.depth = 1,
 		.mipLevels = 1,
@@ -168,7 +170,6 @@ GX2Texture main_screen = {
 // For resolutions that aren't multiples of 256 (aka not 1280x720) we need to bounce the framebuffer
 GX2Surface temp_surf = {
 	.aa = GX2_AA_MODE1X,
-	.use = GX2_SURFACE_USE_TEXTURE,
 	.dim = GX2_SURFACE_DIM_TEXTURE_2D,
 	.depth = 1,
 	.mipLevels = 1,
@@ -945,6 +946,11 @@ void I_OsPolling(void)
 	if (mod & KMOD_LALT)     altdown |= 1;
 	if (mod & KMOD_RALT)     altdown |= 2;
 	if (mod & KMOD_CAPS) capslock = true;
+
+	if (!WHBProcIsRunning()) {
+		LUA_HookBool(true, HOOK(GameQuit));
+		I_Quit();
+	}
 }
 
 //
@@ -1039,12 +1045,16 @@ void I_FinishUpdate(void)
 
 	if (rendermode == render_soft && screens[0])
 	{
+		if (!main_screen.surface.image) {
+			// ProcUI probably ganked us
+			return;
+		}
 		if (vid.width != main_screen.surface.pitch) {
 			// Slow blit path
 			GX2CopySurface(&temp_surf, 0, 0, &main_screen.surface, 0, 0);
 		}
 
-		GX2Invalidate(GX2_INVALIDATE_MODE_CPU | GX2_INVALIDATE_MODE_TEXTURE, main_screen.surface.image, main_screen.surface.imageSize);
+		GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, main_screen.surface.image, main_screen.surface.imageSize);
 		WHBGfxBeginRender();
 		WHBGfxBeginRenderTV();
 		WHBGfxClearColor(0.0f, 1.0f, 0.0f, 1.0f);
@@ -1253,6 +1263,40 @@ void VID_CheckGLLoaded(rendermode_t oldrender)
 #endif
 }
 
+static void VID_DestroyGX2Surfaces(void) {
+	if (main_screen.surface.image) {
+		GX2RDestroySurfaceEx(&main_screen.surface, 0);
+		main_screen.surface.image = NULL;
+	}
+	if (temp_surf.image) {
+		GX2RDestroySurfaceEx(&main_screen.surface, 0);
+		temp_surf.image = NULL;
+	}
+}
+
+static void VID_CreateGX2Surfaces(void) {
+	VID_DestroyGX2Surfaces();
+
+	GX2RCreateSurface(&main_screen.surface, GX2R_RESOURCE_BIND_TEXTURE | GX2R_RESOURCE_USAGE_FORCE_MEM1);
+	GX2InitTextureRegs(&main_screen);
+
+	if (vid.width != main_screen.surface.pitch) {
+		// bounce texture
+		CONS_Printf("Video width %d does not match stride %d! Video updates slow\n", vid.width, main_screen.surface.pitch);
+
+		GX2RCreateSurface(&temp_surf, GX2R_RESOURCE_BIND_TEXTURE | GX2R_RESOURCE_USAGE_FORCE_MEM1);
+		vid.direct = temp_surf.image;
+		screens[0] = vid.direct;
+	} else {
+		// use main screen directly
+		vid.direct = main_screen.surface.image;
+		screens[0] = vid.direct;
+	}
+}
+
+static uint32_t VID_ProcUIAcquire(void* arg) { (void)arg; VID_CreateGX2Surfaces(); return 0; }
+static uint32_t VID_ProcUIRelease(void* arg) { (void)arg; VID_DestroyGX2Surfaces(); return 0; }
+
 boolean VID_CheckRenderer(void)
 {
 	boolean rendererchanged = false;
@@ -1317,16 +1361,16 @@ boolean VID_CheckRenderer(void)
 
 	if (rendermode == render_soft)
 	{
-		// screen texture
-		if (main_screen.surface.image) {
-			MEMFreeToDefaultHeap(main_screen.surface.image);
-			main_screen.surface.image = NULL;
+		// "vram"
+		if (vid.buffer) {
+			MEMFreeToDefaultHeap(vid.buffer);
+			vid.buffer = NULL;
 		}
-		if (temp_surf.image) {
-			MEMFreeToDefaultHeap(temp_surf.image);
-			temp_surf.image = NULL;
-		}
+		vid.rowbytes = vid.width; // TODO fix the renderer to not need this
+		const uint32_t buffer_size = NUMSCREENS * vid.height * vid.rowbytes * vid.bpp;
+		vid.buffer = MEMAllocFromDefaultHeapEx(buffer_size, 0x100);
 
+		// screen texture
 		if (vid.bpp == 1) {
 			main_screen.surface.format = GX2_SURFACE_FORMAT_UNORM_R8;
 			temp_surf.format = GX2_SURFACE_FORMAT_UNORM_R8;
@@ -1336,28 +1380,10 @@ boolean VID_CheckRenderer(void)
 
 		main_screen.surface.width = vid.width;
 		main_screen.surface.height = vid.height;
-		GX2CalcSurfaceSizeAndAlignment(&main_screen.surface);
-		GX2InitTextureRegs(&main_screen);
-
 		temp_surf.width = vid.width;
 		temp_surf.height = vid.height;
-		GX2CalcSurfaceSizeAndAlignment(&temp_surf);
 
-		if (vid.width != main_screen.surface.pitch) {
-			// bounce texture
-			CONS_Printf("Video width %d does not match stride %d! Video updates slow\n", vid.width, main_screen.surface.pitch);
-			temp_surf.image = MEMAllocFromDefaultHeapEx(NUMSCREENS * temp_surf.imageSize, temp_surf.alignment);
-			main_screen.surface.image = MEMAllocFromDefaultHeapEx(main_screen.surface.imageSize, main_screen.surface.alignment);
-
-			vid.buffer = temp_surf.image;
-			vid.rowbytes = temp_surf.pitch;
-		} else {
-			// use main screen directly
-			main_screen.surface.image = MEMAllocFromDefaultHeapEx(NUMSCREENS * main_screen.surface.imageSize, main_screen.surface.alignment);
-			vid.buffer = main_screen.surface.image;
-			vid.rowbytes = main_screen.surface.pitch;
-		}
-		vid.direct = NULL;
+		VID_CreateGX2Surfaces();
 	}
 #ifdef HWRENDER
 	else if (rendermode == render_opengl && rendererchanged)
@@ -1468,6 +1494,9 @@ void I_StartupGraphics(void)
 	WHBGfxInitShaderAttribute(basic_shader, "aTexCoord", aTexCoord, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32);
 	WHBGfxInitFetchShader(basic_shader);
 	GX2InitSampler(&sampler_sharp, GX2_TEX_CLAMP_MODE_CLAMP, GX2_TEX_XY_FILTER_MODE_POINT);
+
+	ProcUIRegisterCallback(PROCUI_CALLBACK_ACQUIRE, VID_ProcUIAcquire, NULL, 150);
+	ProcUIRegisterCallback(PROCUI_CALLBACK_RELEASE, VID_ProcUIRelease, NULL, 150);
 
 	// Renderer choices
 	// Takes priority over the config.

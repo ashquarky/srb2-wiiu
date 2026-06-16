@@ -72,6 +72,7 @@ typedef LPVOID (WINAPI *p_MapViewOfFile) (HANDLE, DWORD, DWORD, DWORD, SIZE_T);
 
 #include <sysapp/launch.h>
 #include <proc_ui/procui.h>
+#include <whb/proc.h>
 #endif
 
 #ifdef HAVE_SDL
@@ -2475,6 +2476,8 @@ INT32 I_StartupSystem(void)
 	}
 	devoptab_list[STD_OUT] = &dotab_stdout;
 	devoptab_list[STD_ERR] = &dotab_stdout;
+
+	WHBProcInit();
 #endif
 #ifdef HAVE_THREADS
 	I_start_threads();
@@ -2508,8 +2511,7 @@ static void I_WiiuPrepShutdown(void)
 	// Explicitly launch the menu if the OS hasn't already picked a destination for us
 	SYSLaunchMenu();
 
-	SDL_Event ev;
-	while (SDL_WaitEvent(&ev) && ev.type != SDL_QUIT);
+	while (WHBProcIsRunning());
 }
 #else
 static void I_WiiuPrepShutdown(void) {}
@@ -2807,6 +2809,8 @@ void I_ShutdownSystem(void)
 #endif
 
 #ifdef __WIIU__
+	WHBProcShutdown();
+
 	WHBLogModuleDeinit();
 	WHBLogCafeDeinit();
 	WHBLogUdpDeinit();
