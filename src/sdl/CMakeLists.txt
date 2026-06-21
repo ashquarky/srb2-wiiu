@@ -1,7 +1,7 @@
 # Declare SDL2 interface sources
 
 target_sources(SRB2SDL2 PRIVATE
-	ogl_sdl.c
+#	ogl_sdl.c
 	i_threads.c
 	i_net.c
 	i_system.c

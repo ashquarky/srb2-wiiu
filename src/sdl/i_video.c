@@ -66,7 +66,6 @@
 #include "../hardware/hw_drv.h"
 // For dynamic referencing of HW rendering functions
 #include "hwsym_sdl.h"
-#include "ogl_sdl.h"
 #endif
 
 #include <whb/gfx.h>
@@ -147,9 +146,9 @@ static SDL_bool      havefocus = SDL_TRUE;
 static const char *fallback_resolution_name = "Fallback";
 
 // GX2 vars
-WHBGfxShaderGroup *basic_shader;
-int aPosition;
-int aTexCoord;
+static WHBGfxShaderGroup *basic_shader;
+static int aPosition;
+static int aTexCoord;
 
 GX2Texture main_screen = {
 	.surface = {
@@ -1103,7 +1102,7 @@ void I_FinishUpdate(void)
 			HWD.pfnDrawScreenTexture(HWD_SCREENTEXTURE_GENERIC2, NULL, 0);
 			HWD.pfnUnSetShader();
 		}
-		OglSdlFinishUpdate(cv_vidwait.value);
+		HWD.pfnFinishUpdate(1);
 	}
 #endif
 
@@ -1226,14 +1225,7 @@ static SDL_bool Impl_CreateContext(void)
 	if ((rendermode == render_opengl)
 	&& (vid.glstate != VID_GL_LIBRARY_ERROR))
 	{
-		if (!sdlglcontext)
-			sdlglcontext = SDL_GL_CreateContext(window);
-		if (sdlglcontext == NULL)
-		{
-			SDL_DestroyWindow(window);
-			I_Error("Failed to create a GL context: %s\n", SDL_GetError());
-		}
-		SDL_GL_MakeCurrent(window, sdlglcontext);
+		// TODO
 	}
 	else
 #endif
@@ -1317,9 +1309,6 @@ boolean VID_CheckRenderer(void)
 		if (rendermode == render_opengl)
 		{
 			VID_CheckGLLoaded(oldrenderer);
-
-			// Initialise OpenGL before calling SDLSetMode!!!
-			// This is because SDLSetMode calls OglSdlSurface.
 			if (vid.glstate == VID_GL_LIBRARY_NOTLOADED)
 			{
 				VID_StartupOpenGL();
@@ -1327,25 +1316,7 @@ boolean VID_CheckRenderer(void)
 				// Loaded successfully!
 				if (vid.glstate == VID_GL_LIBRARY_LOADED)
 				{
-					// Destroy the current window, if it exists.
-					if (window)
-					{
-						SDL_DestroyWindow(window);
-						window = NULL;
-					}
-
-					// Destroy the current window rendering context, if that also exists.
-					if (renderer)
-					{
-						SDL_DestroyRenderer(renderer);
-						renderer = NULL;
-					}
-
-					// Create a new window.
-					Impl_CreateWindow(USE_FULLSCREEN);
-
-					// From there, the OpenGL context was already created.
-					contextcreated = true;
+					// TODO GX2
 				}
 			}
 			else if (vid.glstate == VID_GL_LIBRARY_ERROR)
@@ -1424,7 +1395,7 @@ INT32 VID_SetMode(INT32 modeNum)
 	return SDL_TRUE;
 }
 
-WHBGfxShaderGroup* GLSL_CompileShader(const char* vsSrc, const char* psSrc)
+static WHBGfxShaderGroup* GLSL_CompileShader(const char* vsSrc, const char* psSrc)
 {
 	char infoLog[1024];
 	GX2VertexShader* vs = GLSL_CompileVertexShader(vsSrc, infoLog, sizeof(infoLog), GLSL_COMPILER_FLAG_NONE);
@@ -1606,7 +1577,7 @@ void VID_StartupOpenGL(void)
 	{
 		CONS_Printf("VID_StartupOpenGL()...\n");
 		HWD.pfnInit             = hwSym("Init",NULL);
-		HWD.pfnFinishUpdate     = NULL;
+		HWD.pfnFinishUpdate     = hwSym("FinishUpdate",NULL);
 		HWD.pfnDraw2DLine       = hwSym("Draw2DLine",NULL);
 		HWD.pfnDrawPolygon      = hwSym("DrawPolygon",NULL);
 		HWD.pfnDrawIndexedTriangles = hwSym("DrawIndexedTriangles",NULL);
@@ -1687,10 +1658,7 @@ void I_ShutdownGraphics(void)
 	I_OutputMsg("shut down\n");
 
 #ifdef HWRENDER
-	if (sdlglcontext)
-	{
-		SDL_GL_DeleteContext(sdlglcontext);
-	}
+	// TODO
 #endif
 	SDL_QuitSubSystem(SDL_INIT_VIDEO);
 	framebuffer = SDL_FALSE;

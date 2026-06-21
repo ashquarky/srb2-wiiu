@@ -70,6 +70,11 @@
 	\return	void
 */
 //
+
+EXPORT void HWRAPI(OglSdlSetPalette) (RGBA_t *palette) {
+	// TODO
+}
+
 void *hwSym(const char *funcName,void *handle)
 {
 	void *funcPointer = NULL;
@@ -115,6 +120,7 @@ void *hwSym(const char *funcName,void *handle)
 	GETFUNC(UpdateLightTable);
 	GETFUNC(ClearLightTables);
 	GETFUNC(SetScreenPalette);
+	GETFUNC(FinishUpdate);
 
 #else //HWRENDER
 	if (0 == strcmp("FinishUpdate", funcName))

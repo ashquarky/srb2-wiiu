@@ -182,6 +182,10 @@ if("${CMAKE_SYSTEM_NAME}" MATCHES "Darwin")
 endif()
 
 if(WUT)
+	target_compile_definitions(SRB2SDL2 PRIVATE -DHWRENDER)
+	add_subdirectory(hardware)
+	target_link_libraries(SRB2SDL2 PRIVATE cglm)
+
 	target_compile_definitions(SRB2SDL2 PRIVATE -DWIIU -DNO_IPV6)
 	# Force actually setting the -std flags
 	set_property(TARGET SRB2SDL2 PROPERTY C_STANDARD 11)
