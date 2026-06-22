@@ -202,6 +202,7 @@ GX2Sampler sampler_sharp;
 // windowed video modes from which to choose from.
 static INT32 windowedModes[MAXWINMODES][2] =
 {
+	{1920, 1080}, // 1.33,4.00
 	{1280, 960}, // 1.33,4.00
 	{1280, 800}, // 1.60,4.00
 	{1280, 720}, // 1.66

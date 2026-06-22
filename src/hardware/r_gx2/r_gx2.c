@@ -78,8 +78,27 @@ static struct vertex_arena vertex_cache;
 static struct vertex_arena ubo_cache;
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
-static GX2Texture gx2_textures[2048] = {};
-static int gx2_texture_free = 1;
+#define HANDLE_NDX(h) (h & 0xffff)
+#define HANDLE_GEN(h) (h >> 16)
+#define NEW_HANDLE(ndx, gen) ((gen << 16) | (ndx & 0xffff))
+
+struct gx2_texture {
+	GX2Texture t;
+	uint16_t generation;
+};
+
+static struct gx2_texture gx2_textures[2048] = {};
+static uint16_t gx2_texture_free = 1;
+
+static struct gx2_texture *get_gx2_texture(const uint32_t handle) {
+	if (!handle) return NULL;
+	const uint16_t ndx = HANDLE_NDX(handle), gen = HANDLE_GEN(handle);
+
+	struct gx2_texture *tex = &gx2_textures[ndx];
+	if (tex->generation != gen) return NULL;
+
+	return tex;
+}
 
 static GX2Sampler sampler_sharp;
 
@@ -87,7 +106,8 @@ EXPORT boolean HWRAPI(Init)(void) {
 	DEBUG("Init");
 	vcache_init(&vertex_cache, 128 * 1024 * sizeof(FOutVector), GX2_VERTEX_BUFFER_ALIGNMENT,
 	            GX2_INVALIDATE_MODE_CPU_ATTRIBUTE_BUFFER, false);
-	vcache_init(&ubo_cache, 2 * 1024 * 1024, GX2_UNIFORM_BLOCK_ALIGNMENT, GX2_INVALIDATE_MODE_UNIFORM_BLOCK, true);
+	vcache_init(&ubo_cache, 2 * 1024 * 1024, GX2_UNIFORM_BLOCK_ALIGNMENT,
+	            GX2_INVALIDATE_MODE_CPU | GX2_INVALIDATE_MODE_UNIFORM_BLOCK, true);
 
 	const boolean ok = GLSL_Init();
 	if (!ok) {
@@ -138,8 +158,7 @@ EXPORT void HWRAPI(Draw2DLine)(F2DCoord *v1, F2DCoord *v2, RGBA_t Color) {
 	// TODO
 }
 
-EXPORT void HWRAPI(DrawPolygon)(FSurfaceInfo *pSurf, FOutVector *pOutVerts, FUINT iNumPts, FBITFIELD PolyFlags) {
-	DEBUG("DrawPolygon");
+static void PrepDraw(FSurfaceInfo *pSurf, const FOutVector *pOutVerts, const FUINT iNumPts, FBITFIELD PolyFlags) {
 	// TODO Blend PolyFlags, pSurf
 
 	const struct block verts = vcache_add(&vertex_cache, pOutVerts, sizeof(pOutVerts[0]) * iNumPts);
@@ -166,14 +185,21 @@ EXPORT void HWRAPI(DrawPolygon)(FSurfaceInfo *pSurf, FOutVector *pOutVerts, FUIN
 
 	const struct block a_ubo = vcache_add(&ubo_cache, &ubo, sizeof(ubo));
 	GX2SetVertexUniformBlock(vuUBO->offset, a_ubo.size, a_ubo.data);
+}
 
+EXPORT void HWRAPI(DrawPolygon)(FSurfaceInfo *pSurf, FOutVector *pOutVerts, FUINT iNumPts, FBITFIELD PolyFlags) {
+	DEBUG("DrawPolygon");
+
+	PrepDraw(pSurf, pOutVerts, iNumPts, PolyFlags);
 	GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLE_FAN, iNumPts, 0, 1);
 }
 
 EXPORT void HWRAPI(DrawIndexedTriangles)(FSurfaceInfo *pSurf, FOutVector *pOutVerts, FUINT iNumPts, FBITFIELD PolyFlags,
                                          UINT32 *IndexArray) {
 	DEBUG("DrawIndexedTriangles");
-	// TODO
+
+	PrepDraw(pSurf, pOutVerts, iNumPts, PolyFlags);
+	GX2DrawIndexedImmediateEx(GX2_PRIMITIVE_MODE_TRIANGLES, iNumPts, GX2_INDEX_TYPE_U32, IndexArray, 0, 1);
 }
 
 EXPORT void HWRAPI(RenderSkyDome)(gl_sky_t *sky) {
@@ -205,23 +231,25 @@ EXPORT void HWRAPI(SetTexture)(GLMipmap_t *TexInfo) {
 		DEBUG("null texture");
 		return;
 	}
-	if (!TexInfo->downloaded) {
+	const struct gx2_texture *tex = get_gx2_texture(TexInfo->downloaded);
+	if (!tex) {
 		DEBUG("fixing texture");
 		UpdateTexture(TexInfo);
+		tex = get_gx2_texture(TexInfo->downloaded);
 	}
-	GX2Texture *tex = &gx2_textures[TexInfo->downloaded];
 
 	GX2SetPixelSampler(&sampler_sharp, 0);
-	GX2SetPixelTexture(tex, 0);
+	GX2SetPixelTexture(&tex->t, 0);
 }
 
 EXPORT void HWRAPI(UpdateTexture)(GLMipmap_t *TexInfo) {
 	DEBUG("UpdateTexture");
-	unsigned int index = TexInfo->downloaded;
-	if (!index) {
+	struct gx2_texture *gtex = get_gx2_texture(TexInfo->downloaded);
+	if (!gtex) {
 		// Find a free slot
-		for (index = gx2_texture_free; index < ARRAY_SIZE(gx2_textures); index++) {
-			if (gx2_textures[index].surface.image == NULL) {
+		unsigned int index;
+		for (index = 0; index < ARRAY_SIZE(gx2_textures); index++) {
+			if (gx2_textures[index].t.surface.image == NULL) {
 				gx2_texture_free = index;
 				break;
 			}
@@ -230,9 +258,10 @@ EXPORT void HWRAPI(UpdateTexture)(GLMipmap_t *TexInfo) {
 			printf("Texture cache full!");
 			return;
 		}
-		TexInfo->downloaded = index;
+		TexInfo->downloaded = NEW_HANDLE(index, ++gx2_textures[index].generation);
+		gtex = get_gx2_texture(TexInfo->downloaded);
 	}
-	GX2Texture *tex = &gx2_textures[index];
+	GX2Texture *tex = &gtex->t;
 
 	tex->surface.dim = GX2_SURFACE_DIM_TEXTURE_2D;
 	tex->surface.width = TexInfo->width;
@@ -240,7 +269,6 @@ EXPORT void HWRAPI(UpdateTexture)(GLMipmap_t *TexInfo) {
 	tex->surface.depth = 1;
 	tex->surface.mipLevels = 1;
 	tex->surface.aa = GX2_AA_MODE1X;
-	tex->surface.resourceFlags = GX2R_RESOURCE_BIND_TEXTURE;
 	tex->surface.tileMode = GX2_TILE_MODE_LINEAR_ALIGNED;
 	tex->surface.swizzle = 0;
 	tex->viewNumMips = 1;
@@ -281,7 +309,8 @@ EXPORT void HWRAPI(UpdateTexture)(GLMipmap_t *TexInfo) {
 			break;
 	}
 
-	GX2RCreateSurface(&tex->surface, 0);
+	GX2RCreateSurface(&tex->surface, GX2R_RESOURCE_BIND_TEXTURE | GX2R_RESOURCE_USAGE_CPU_WRITE |
+				      GX2R_RESOURCE_USAGE_GPU_READ);
 	GX2InitTextureRegs(tex);
 
 	void *pixel_data = GX2RLockSurfaceEx(&tex->surface, 0, GX2R_RESOURCE_USAGE_CPU_WRITE);
@@ -319,19 +348,18 @@ EXPORT void HWRAPI(UpdateTexture)(GLMipmap_t *TexInfo) {
 	GX2RUnlockSurfaceEx(&tex->surface, 0, 0);
 
 	// TODO sampler params
-	DEBUG("UpdateTexture: %xx%x id %d next %d\n", TexInfo->width, TexInfo->height, index, gx2_texture_free);
 }
 
 EXPORT void HWRAPI(DeleteTexture)(GLMipmap_t *TexInfo) {
 	DEBUG("DeleteTexture");
-	if (!TexInfo || !TexInfo->downloaded) return;
+	if (!TexInfo) return;
+	struct gx2_texture *tex = get_gx2_texture(TexInfo->downloaded);
+	if (!tex) return;
 
-	const int index = TexInfo->downloaded;
-	GX2Texture *tex = &gx2_textures[index];
+	GX2RDestroySurfaceEx(&tex->t.surface, 0);
+	tex->t.surface.image = NULL;
 
-	GX2RDestroySurfaceEx(&tex->surface, 0);
-	tex->surface.image = NULL;
-
+	const uint16_t index = HANDLE_NDX(TexInfo->downloaded);
 	if (gx2_texture_free > index)
 		gx2_texture_free = index;
 }
@@ -352,17 +380,19 @@ EXPORT void HWRAPI(ReadScreenTexture)(int tex, UINT8 *dst_data) {
 
 EXPORT void HWRAPI(GClipRect)(INT32 minx, INT32 miny, INT32 maxx, INT32 maxy, float nearclip) {
 	DEBUG("GClipRect");
-	// TODO
+	GX2SetViewport(minx, miny, maxx - minx, maxy - miny, 0.0f, 1.0f);
+	GX2SetScissor(minx, miny, maxx - minx, maxy - miny);
 }
 
 EXPORT void HWRAPI(ClearMipMapCache)(void) {
 	DEBUG("ClearMipMapCache");
 	for (int i = 0; i < ARRAY_SIZE(gx2_textures); i++) {
-		GX2Texture *tex = &gx2_textures[i];
-		if (!tex->surface.image) continue;
+		struct gx2_texture *tex = &gx2_textures[i];
+		if (!tex->t.surface.image) continue;
 
-		GX2RDestroySurfaceEx(&tex->surface, 0);
-		tex->surface.image = NULL;
+		GX2RDestroySurfaceEx(&tex->t.surface, 0);
+		tex->t.surface.image = NULL;
+		tex->generation++;
 	}
 
 	gx2_texture_free = 1;
