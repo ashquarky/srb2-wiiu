@@ -17,14 +17,18 @@
 #include <gx2/clear.h>
 #include <gx2/draw.h>
 #include <gx2/registers.h>
+#include <gx2/utils.h>
+#include <gx2r/surface.h>
 #include <whb/gfx.h>
 
-//#define DEBUG(fmt, ...) printf(fmt, ##__VA_ARGS__)
+// #define DEBUG(fmt, ...) printf(fmt, ##__VA_ARGS__)
 #define DEBUG(fmt, ...)
 
 #define      ASPECT_RATIO            (1.0f)  //(320.0f/200.0f)
 #define      FAR_CLIPPING_PLANE      32768.0f // Draw further! Tails 01-21-2001
 static float NEAR_CLIPPING_PLANE = NZCLIP_PLANE;
+
+static RGBA_t rgba_palette[256];
 
 // static mat4 gx2_modelview;
 // static mat4 gx2_projection;
@@ -68,10 +72,16 @@ struct fixed_UBO {
 	mat4 uProjection;
 };
 
-struct fixed_UBO ubo;
+static struct fixed_UBO ubo;
 
-struct vertex_arena vertex_cache;
-struct vertex_arena ubo_cache;
+static struct vertex_arena vertex_cache;
+static struct vertex_arena ubo_cache;
+
+#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
+static GX2Texture gx2_textures[2048] = {};
+static int gx2_texture_free = 1;
+
+static GX2Sampler sampler_sharp;
 
 EXPORT boolean HWRAPI(Init)(void) {
 	DEBUG("Init");
@@ -106,6 +116,8 @@ EXPORT boolean HWRAPI(Init)(void) {
 		CONS_Printf(M_GetText("Failed to get shader UBO...\n"));
 		return false;
 	}
+
+	GX2InitSampler(&sampler_sharp, GX2_TEX_CLAMP_MODE_CLAMP, GX2_TEX_XY_FILTER_MODE_POINT);
 
 	SetTransform(NULL);
 	return true;
@@ -189,17 +201,148 @@ EXPORT void HWRAPI(ClearBuffer)(FBOOLEAN ColorMask, FBOOLEAN DepthMask, FRGBAFlo
 
 EXPORT void HWRAPI(SetTexture)(GLMipmap_t *TexInfo) {
 	DEBUG("SetTexture");
-	// TODO
+	if (!TexInfo) {
+		DEBUG("null texture");
+		return;
+	}
+	if (!TexInfo->downloaded) {
+		DEBUG("fixing texture");
+		UpdateTexture(TexInfo);
+	}
+	GX2Texture *tex = &gx2_textures[TexInfo->downloaded];
+
+	GX2SetPixelSampler(&sampler_sharp, 0);
+	GX2SetPixelTexture(tex, 0);
 }
 
 EXPORT void HWRAPI(UpdateTexture)(GLMipmap_t *TexInfo) {
 	DEBUG("UpdateTexture");
-	// TODO
+	unsigned int index = TexInfo->downloaded;
+	if (!index) {
+		// Find a free slot
+		for (index = gx2_texture_free; index < ARRAY_SIZE(gx2_textures); index++) {
+			if (gx2_textures[index].surface.image == NULL) {
+				gx2_texture_free = index;
+				break;
+			}
+		}
+		if (index >= ARRAY_SIZE(gx2_textures)) {
+			printf("Texture cache full!");
+			return;
+		}
+		TexInfo->downloaded = index;
+	}
+	GX2Texture *tex = &gx2_textures[index];
+
+	tex->surface.dim = GX2_SURFACE_DIM_TEXTURE_2D;
+	tex->surface.width = TexInfo->width;
+	tex->surface.height = TexInfo->height;
+	tex->surface.depth = 1;
+	tex->surface.mipLevels = 1;
+	tex->surface.aa = GX2_AA_MODE1X;
+	tex->surface.resourceFlags = GX2R_RESOURCE_BIND_TEXTURE;
+	tex->surface.tileMode = GX2_TILE_MODE_LINEAR_ALIGNED;
+	tex->surface.swizzle = 0;
+	tex->viewNumMips = 1;
+	tex->viewNumSlices = 1;
+
+	int src_bpp = 4;
+	switch (TexInfo->format) {
+		// Convert indexed-colour formats to RGBA (for now)
+		case GL_TEXFMT_P_8:
+			src_bpp = 1;
+			tex->surface.format = GX2_SURFACE_FORMAT_UNORM_R8_G8_B8_A8;
+			tex->compMap = GX2_COMP_MAP(GX2_SQ_SEL_R, GX2_SQ_SEL_G, GX2_SQ_SEL_B, GX2_SQ_SEL_A);
+			break;
+		case GL_TEXFMT_AP_88:
+			src_bpp = 2;
+			tex->surface.format = GX2_SURFACE_FORMAT_UNORM_R8_G8_B8_A8;
+			tex->compMap = GX2_COMP_MAP(GX2_SQ_SEL_R, GX2_SQ_SEL_G, GX2_SQ_SEL_B, GX2_SQ_SEL_A);
+			break;
+		case GL_TEXFMT_RGBA:
+			src_bpp = 4;
+			tex->surface.format = GX2_SURFACE_FORMAT_UNORM_R8_G8_B8_A8;
+			tex->compMap = GX2_COMP_MAP(GX2_SQ_SEL_R, GX2_SQ_SEL_G, GX2_SQ_SEL_B, GX2_SQ_SEL_A);
+			break;
+		case GL_TEXFMT_ALPHA_8:
+			src_bpp = 1;
+			tex->surface.format = GX2_SURFACE_FORMAT_UNORM_R8;
+			tex->compMap = GX2_COMP_MAP(GX2_SQ_SEL_1, GX2_SQ_SEL_1, GX2_SQ_SEL_1, GX2_SQ_SEL_R);
+			break;
+		case GL_TEXFMT_INTENSITY_8:
+			src_bpp = 1;
+			tex->surface.format = GX2_SURFACE_FORMAT_UNORM_R8;
+			tex->compMap = GX2_COMP_MAP(GX2_SQ_SEL_R, GX2_SQ_SEL_R, GX2_SQ_SEL_R, GX2_SQ_SEL_1);
+			break;
+		case GL_TEXFMT_ALPHA_INTENSITY_88:
+			src_bpp = 2;
+			tex->surface.format = GX2_SURFACE_FORMAT_UNORM_R8_G8;
+			tex->compMap = GX2_COMP_MAP(GX2_SQ_SEL_R, GX2_SQ_SEL_R, GX2_SQ_SEL_R, GX2_SQ_SEL_G);
+			break;
+	}
+
+	GX2RCreateSurface(&tex->surface, 0);
+	GX2InitTextureRegs(tex);
+
+	void *pixel_data = GX2RLockSurfaceEx(&tex->surface, 0, GX2R_RESOURCE_USAGE_CPU_WRITE);
+	const uint8_t *src = TexInfo->data;
+
+	if (TexInfo->format == GL_TEXFMT_P_8 || TexInfo->format == GL_TEXFMT_AP_88) {
+		// Palette conversion
+		for (int y = 0; y < TexInfo->height; y++) {
+			RGBA_t *line = pixel_data + tex->surface.pitch * sizeof(RGBA_t) * y;
+			for (int x = 0; x < TexInfo->width; x++) {
+				const uint8_t a = TexInfo->format == GL_TEXFMT_AP_88 ? *src++ : 0;
+				const uint8_t p = *src++;
+
+				if (p == HWR_PATCHES_CHROMAKEY_COLORINDEX && TexInfo->flags & TF_CHROMAKEYED) {
+					line[x] = (RGBA_t){.s = {0, 0, 0, 0}};
+					TexInfo->flags |= TF_TRANSPARENT;
+				} else {
+					line[x] = rgba_palette[p];
+				}
+
+				if (TexInfo->format == GL_TEXFMT_AP_88 && !(TexInfo->flags & TF_CHROMAKEYED)) {
+					line[x].s.alpha = a;
+				}
+			}
+		}
+	} else {
+		// Just copy and fix stride
+		for (int y = 0; y < TexInfo->height; y++) {
+			void *line = pixel_data + tex->surface.pitch * src_bpp * y;
+			const void *src_line = src + TexInfo->width * src_bpp * y;
+			memcpy(line, src_line, TexInfo->width * src_bpp);
+		}
+	}
+
+	GX2RUnlockSurfaceEx(&tex->surface, 0, 0);
+
+	// TODO sampler params
+	DEBUG("UpdateTexture: %xx%x id %d next %d\n", TexInfo->width, TexInfo->height, index, gx2_texture_free);
 }
 
 EXPORT void HWRAPI(DeleteTexture)(GLMipmap_t *TexInfo) {
 	DEBUG("DeleteTexture");
-	// TODO
+	if (!TexInfo || !TexInfo->downloaded) return;
+
+	const int index = TexInfo->downloaded;
+	GX2Texture *tex = &gx2_textures[index];
+
+	GX2RDestroySurfaceEx(&tex->surface, 0);
+	tex->surface.image = NULL;
+
+	if (gx2_texture_free > index)
+		gx2_texture_free = index;
+}
+
+EXPORT void HWRAPI(SetTexturePalette)(RGBA_t *ppal) {
+	const size_t pal_size = (sizeof(RGBA_t) * 256);
+	// on a palette change, you have to reload all the textures
+	if (memcmp(&rgba_palette, ppal, pal_size) != 0) {
+		memcpy(&rgba_palette, ppal, pal_size);
+		ClearMipMapCache();
+	}
 }
 
 EXPORT void HWRAPI(ReadScreenTexture)(int tex, UINT8 *dst_data) {
@@ -214,7 +357,15 @@ EXPORT void HWRAPI(GClipRect)(INT32 minx, INT32 miny, INT32 maxx, INT32 maxy, fl
 
 EXPORT void HWRAPI(ClearMipMapCache)(void) {
 	DEBUG("ClearMipMapCache");
-	// TODO ?
+	for (int i = 0; i < ARRAY_SIZE(gx2_textures); i++) {
+		GX2Texture *tex = &gx2_textures[i];
+		if (!tex->surface.image) continue;
+
+		GX2RDestroySurfaceEx(&tex->surface, 0);
+		tex->surface.image = NULL;
+	}
+
+	gx2_texture_free = 1;
 }
 
 EXPORT void HWRAPI(SetSpecialState)(hwdspecialstate_t IdState, INT32 Value) {
@@ -245,12 +396,12 @@ EXPORT void HWRAPI(SetTransform)(FTransform *stransform) {
 
 		if (stransform->mirror) {
 			glm_scale(ubo.uModelView, (vec3){
-				           -stransform->scalex, stransform->scaley, -stransform->scalez
-			           });
+				          -stransform->scalex, stransform->scaley, -stransform->scalez
+			          });
 		} else if (stransform->flip) {
 			glm_scale(ubo.uModelView, (vec3){
-				           stransform->scalex, -stransform->scaley, -stransform->scalez
-			           });
+				          stransform->scalex, -stransform->scaley, -stransform->scalez
+			          });
 		} else {
 			glm_scale(ubo.uModelView, (vec3){stransform->scalex, stransform->scaley, -stransform->scalez});
 		}
@@ -277,7 +428,8 @@ EXPORT void HWRAPI(SetTransform)(FTransform *stransform) {
 
 	if (stransform && stransform->splitscreen) {
 		const float afov = (float) (atan(tan(fov * M_PI / 360) * 0.8) * 360 / M_PI);
-		glm_perspective(glm_rad(afov), 2 * ASPECT_RATIO, NEAR_CLIPPING_PLANE, FAR_CLIPPING_PLANE, ubo.uProjection);
+		glm_perspective(glm_rad(afov), 2 * ASPECT_RATIO, NEAR_CLIPPING_PLANE, FAR_CLIPPING_PLANE,
+		                ubo.uProjection);
 	} else {
 		glm_perspective(glm_rad(fov), ASPECT_RATIO, NEAR_CLIPPING_PLANE, FAR_CLIPPING_PLANE, ubo.uProjection);
 	}

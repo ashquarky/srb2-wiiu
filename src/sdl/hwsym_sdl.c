@@ -79,9 +79,7 @@ void *hwSym(const char *funcName,void *handle)
 {
 	void *funcPointer = NULL;
 #ifdef HWRENDER
-	if (0 == strcmp("SetTexturePalette", funcName))
-		funcPointer = &OglSdlSetPalette;
-
+	if (0) {}
 	GETFUNC(Init);
 	GETFUNC(Draw2DLine);
 	GETFUNC(DrawPolygon);
@@ -92,6 +90,7 @@ void *hwSym(const char *funcName,void *handle)
 	GETFUNC(SetTexture);
 	GETFUNC(UpdateTexture);
 	GETFUNC(DeleteTexture);
+	GETFUNC(SetTexturePalette);
 	GETFUNC(ReadScreenTexture);
 	GETFUNC(GClipRect);
 	GETFUNC(ClearMipMapCache);
