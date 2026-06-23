@@ -76,6 +76,7 @@ static struct fixed_UBO ubo;
 
 static struct vertex_arena vertex_cache;
 static struct vertex_arena ubo_cache;
+static struct vertex_arena index_cache;
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 #define HANDLE_NDX(h) (h & 0xffff)
@@ -108,6 +109,7 @@ EXPORT boolean HWRAPI(Init)(void) {
 	            GX2_INVALIDATE_MODE_CPU_ATTRIBUTE_BUFFER, false);
 	vcache_init(&ubo_cache, 2 * 1024 * 1024, GX2_UNIFORM_BLOCK_ALIGNMENT,
 	            GX2_INVALIDATE_MODE_CPU | GX2_INVALIDATE_MODE_UNIFORM_BLOCK, true);
+	vcache_init(&index_cache, 128 * 1024, GX2_INDEX_BUFFER_ALIGNMENT, GX2_INVALIDATE_MODE_CPU_ATTRIBUTE_BUFFER, false);
 
 	const boolean ok = GLSL_Init();
 	if (!ok) {
@@ -151,6 +153,7 @@ EXPORT void HWRAPI(FinishUpdate)(INT32 waitvbl) {
 
 	vcache_reset(&vertex_cache);
 	vcache_reset(&ubo_cache);
+	vcache_reset(&index_cache);
 }
 
 EXPORT void HWRAPI(Draw2DLine)(F2DCoord *v1, F2DCoord *v2, RGBA_t Color) {
@@ -165,6 +168,7 @@ static void PrepDraw(FSurfaceInfo *pSurf, const FOutVector *pOutVerts, const FUI
 	GX2SetAttribBuffer(aPosition, verts.size, sizeof(FOutVector), verts.data);
 	GX2SetAttribBuffer(aTexCoord, verts.size, sizeof(FOutVector), verts.data);
 
+	GX2SetAlphaTest(TRUE, GX2_COMPARE_FUNC_NOT_EQUAL, 0.0f);
 	GX2SetDepthOnlyControl(TRUE, TRUE, GX2_COMPARE_FUNC_LEQUAL);
 	GX2SetColorControl(GX2_LOGIC_OP_COPY, 0xFF, FALSE, TRUE);
 	GX2SetBlendControl(
@@ -199,7 +203,8 @@ EXPORT void HWRAPI(DrawIndexedTriangles)(FSurfaceInfo *pSurf, FOutVector *pOutVe
 	DEBUG("DrawIndexedTriangles");
 
 	PrepDraw(pSurf, pOutVerts, iNumPts, PolyFlags);
-	GX2DrawIndexedImmediateEx(GX2_PRIMITIVE_MODE_TRIANGLES, iNumPts, GX2_INDEX_TYPE_U32, IndexArray, 0, 1);
+        const struct block indexes = vcache_add(&index_cache, IndexArray, sizeof(IndexArray[0]) * iNumPts);
+	GX2DrawIndexedEx(GX2_PRIMITIVE_MODE_TRIANGLES, iNumPts, GX2_INDEX_TYPE_U32, indexes.data, 0, 1);
 }
 
 EXPORT void HWRAPI(RenderSkyDome)(gl_sky_t *sky) {
